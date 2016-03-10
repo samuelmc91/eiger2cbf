@@ -41,7 +41,7 @@ might be useful on Mac OS X because H5ToXds is provided only for Linux
 (as of 2016 Feb). In this case, you may want to create a following
 wrapper script named H5ToXds.
 
-```
+```bash
 #!/bin/sh
 
 # redirect STDERR to /dev/null so that it does not disturb console outputs from other programs.
@@ -58,15 +58,24 @@ software. The others are closed-source.
 Support
 -------
 
-If the program does not work fine, feel free to contact me
+The program has been tested on the following datasets.
+
+-   EIGER 16M at SLS X06SA (2016 Feb)
+-   EIGER 4M at ESRF ID30A-3
+-   EIGER 4M and 16M sample datasets on Dectris website (downloaded in 2015 Nov)
+
+As there are many beamline and firmware-version specific
+"dialects", eiger2cbf might not work on your dataset.
+If the program does not work well, feel free to contact me
 from the "Issues" page. If you can give me test datasets, it 
 would be very helpful!
 
 Acknowledgements
 ----------------
 
-I thank Harry Powell for writing Makefile and fixing compiler warnings.
-I thank those who gave me test datasets.
+I thank Harry Powell for writing Makefile, fixing compiler warnings and 
+building & hosting binaries. I thank those who gave me feedback and 
+test datasets.
 
 LICENSE
 -------
