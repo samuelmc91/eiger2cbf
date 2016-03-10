@@ -7,7 +7,7 @@ CC=/opt/mingw/bin/i386-mingw32msvc-gcc
 CC=/usr/bin/gcc -O3
 # CC=/opt/intel/composer_xe_2015.0.090/bin/intel64/icc -O3
 all:	
-	${CC} -std=c99 -o minicbf -g \
+	${CC} -std=c99 -o eiger2cbf -g \
 	-I${CBFINC} \
 	-L${CBFLIB} -Ilz4 \
 	eiger2cbf.c \

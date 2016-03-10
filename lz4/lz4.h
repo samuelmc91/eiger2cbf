@@ -71,6 +71,7 @@ int LZ4_versionNumber (void);
 
 int LZ4_compress        (const char* source, char* dest, int sourceSize);
 int LZ4_decompress_safe (const char* source, char* dest, int compressedSize, int maxDecompressedSize);
+  int LZ4_uncompress      (const char* source, char* dest, int outputSize); // Added by Harry Powell on 2016.03.09
 
 /*
 LZ4_compress() :
