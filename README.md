@@ -3,17 +3,16 @@ eiger2cbf: EIGER HDF5 to miniCBF converter
 
 eiger2cbf is a simple program that converts diffraction images from
 EIGER in the HDF5 format to the miniCBF format. This program is intended
-to be used with MOSFLM. You do not need this program to process images
-with DIALS (nightly build as of 2016 March, but not the one comes with 
-CCP4 7.0).
+to be used with MOSFLM. You do *not* need this program to process images
+with [DIALS](http://dials.diamond.ac.uk/); DIALS can process HDF5 images 
+directly (nightly build as of 2016 March, but not the version that comes with CCP4 7.0.0).
 
 Installation
 ------------
 
-You can get static-linked binaries from Harry Powell's website.
-
--   [Linux](http://www.mrc-lmb.cam.ac.uk/harry/imosflm/ver721/downloads/miniCBF-Linux)
--   [Mac OS X](http://www.mrc-lmb.cam.ac.uk/harry/imosflm/ver721/downloads/miniCBF-OSX)
+You can get static-linked binaries built by Harry Powell from his website.
+See the bottom of the
+[iMosflm download page](http://www.mrc-lmb.cam.ac.uk/harry/imosflm/ver721/downloads.html#miniCBF).
 
 To build yourself, you should edit Makefile and run `make`.
 
@@ -21,7 +20,7 @@ Running eiger2cbf without command line options shows a help.
 
 ```
 $ eiger2cbf
-EIGER HDF5 to CBF converter (build 160309)
+EIGER HDF5 to CBF converter (build 160310)
  Written by Takanori Nakane
 
 Usage:
@@ -29,7 +28,7 @@ Usage:
   ./eiger2cbf filename.h5 N out.cbf -- write N-th frame to out.cbf
   ./eiger2cbf filename.h5 N         -- write N-th frame to STDOUT
   ./eiger2cbf filename.h5 N:M   out -- write N to M-th frames to outNNNNNN.cbf
-  N is 1-indexed. The file should be "master" h5.
+  N starts from 1. The file should be "master" h5.
 ```
 
 H5ToXds compatibility
@@ -38,7 +37,7 @@ H5ToXds compatibility
 The command line option is almost the same as H5ToXds from
 Dectris. Actually, you can use eiger2cbf instead of H5ToXds. This
 might be useful on Mac OS X because H5ToXds is provided only for Linux
-(as of 2016 Feb). In this case, you may want to create a following
+(as of 2016 Feb). In this case, you may want to create the following
 wrapper script named H5ToXds.
 
 ```bash
@@ -53,7 +52,35 @@ Alternative choices
 
 H5ToXds from Dectris and hdf2mini-cbf from Global Phasing have similar
 capacities. The advantage of eiger2cbf is that it is open-source, free
-software. The others are closed-source.
+software. The others are closed-source. MOSFLM cannot process outputs
+from H5ToXds because they lack essential headers.
+
+Conversion details
+------------------
+
+The program assumes that the pixel mask has already been applied to the images.
+The values of the invalid pixels are converted to -1 (as in Pilatus).
+
+The following metadata are converted from the master h5.
+
+-   Detector name and serial number
+-   Pixel size
+-   Sensor thickness
+-   Countrate correction cutoff
+-   Wavelength
+-   Detector distance
+-   Beam center
+-   Exposure time
+-   Exposure period
+-   Start angle
+-   Angle increment
+
+Unfortunately, some of them are missing in some datasets. In these cases, 
+the converter outputs zero or standard (common) values. See the console output.
+In the future, we will add command-line options to supply metadata.
+
+Warning: currently, we assume the rotation is around the 'omega' axis and
+two-theta is 0. Send me test data if you need support for more complex geometry.
 
 Support
 -------
@@ -73,9 +100,9 @@ would be very helpful!
 Acknowledgements
 ----------------
 
-I thank Harry Powell for writing Makefile, fixing compiler warnings and 
-building & hosting binaries. I thank those who gave me feedback and 
-test datasets.
+I thank [Harry Powell](http://www.mrc-lmb.cam.ac.uk/harry/) for writing Makefile,
+fixing compiler warnings and building & hosting binaries. 
+I thank those who gave me feedback and test datasets.
 
 LICENSE
 -------

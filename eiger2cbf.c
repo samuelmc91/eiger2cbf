@@ -61,8 +61,9 @@ int main(int argc, char **argv) {
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (build 160309)\n");
-  fprintf(stderr, " Written by Takanori Nakane\n\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (build 160310)\n");
+  fprintf(stderr, " written by Takanori Nakane\n");
+  fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for details.\n\n");
 
   if (argc <= 1 || argc >= 5) { 
     printf("Usage:\n");
@@ -70,7 +71,7 @@ int main(int argc, char **argv) {
     printf("  %s filename.h5 N out.cbf -- write N-th frame to out.cbf\n", argv[0]);
     printf("  %s filename.h5 N         -- write N-th frame to STDOUT\n", argv[0]);
     printf("  %s filename.h5 N:M   out -- write N to M-th frames to outNNNNNN.cbf\n", argv[0]);
-    printf("  N is 1-indexed. The file should be \"master\" h5.\n");
+    printf("  N starts from 1. The file should be \"master\" h5.\n");
     return -1;
   }
 
