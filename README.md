@@ -44,7 +44,7 @@ wrapper script named H5ToXds.
 #!/bin/sh
 
 # redirect STDERR to /dev/null so that it does not disturb console outputs from other programs.
-/path/to/eiger2cbf %@ 2>/dev/null 
+/path/to/eiger2cbf $@ 2>/dev/null
 ```
 
 Alternative choices
