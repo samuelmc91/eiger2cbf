@@ -12,7 +12,7 @@ Installation
 
 You can get static-linked binaries built by Harry Powell from his website.
 See the bottom of the
-[iMosflm download page](http://www.mrc-lmb.cam.ac.uk/harry/imosflm/ver721/downloads.html#miniCBF).
+[iMosflm download page](http://www.mrc-lmb.cam.ac.uk/harry/imosflm/ver721/downloads.html#Eiger2CBF).
 
 To build yourself, you should edit Makefile and run `make`.
 
