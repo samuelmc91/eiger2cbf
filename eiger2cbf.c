@@ -371,9 +371,11 @@ int main(int argc, char **argv) {
     cbf_new_column(cbf, "data");
     int i;
     for (i = 0; i < xpixels * ypixels; i++) {
-      if ((pixel_mask[0] != -9999 && pixel_mask[i] != 0) || // the pixel mask is available
+      if ((pixel_mask[0] != -9999 && pixel_mask[i] == 1) || // the pixel mask is available
 	  (pixel_mask[0] == -9999 && buf[i] == error_val)) { // not available
 	buf_signed[i] = -1;
+      } else if (pixel_mask[0] != -9999 && pixel_mask[i] > 1) { // the pixel mask is 2, 4, 8, 16
+	buf_signed[i] = -2;
       } else {
 	buf_signed[i] = buf[i];
       }
