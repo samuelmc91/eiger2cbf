@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (build 160310)\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (build 160322)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
   fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for details.\n\n");
 
@@ -118,7 +118,6 @@ int main(int argc, char **argv) {
     depth = 16;
   }
   unsigned int error_val = (unsigned int)(((unsigned long long)1 << depth) - 1);
-  fprintf(stderr, "  Thus, the pixel value for invalid (masked) pixels is %u\n", error_val);
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff", &countrate_cutoff);
   if (countrate_cutoff > 0) {
     fprintf(stderr, " /entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff = %d\n", countrate_cutoff);
@@ -178,7 +177,8 @@ int main(int argc, char **argv) {
   }
   unsigned int *buf = (unsigned int*)malloc(sizeof(unsigned int) * xpixels * ypixels);
   signed int *buf_signed = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
-  if (buf == NULL || buf_signed == NULL) {
+  signed int *pixel_mask = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
+  if (buf == NULL || buf_signed == NULL || pixel_mask == NULL) {
     fprintf(stderr, "Failed to allocate image buffer.\n");
     return -1;
   }
@@ -200,6 +200,14 @@ int main(int argc, char **argv) {
   if (entry < 0) {
     fprintf(stderr, "/entry does not exist!\n");
     return -1;
+  }
+
+  pixel_mask[0] = -9999;
+  H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/pixel_mask", pixel_mask);
+  if (pixel_mask[0] == -9999) {
+    fprintf(stderr, "WARNING: failed to read the pixel mask from /entry/instrument/detector/detectorSpecific/pixel_mask.\n");
+    fprintf(stderr, " Thus, we mask pixels whose intensity is %u (= (2 ^ bit_depth_image) - 1) by converting them to -1. \n", error_val);
+    fprintf(stderr, " However, this might mask overloaded (saturated) pixels as well.\n");
   }
   
   // Check if /entry/data present
@@ -363,7 +371,8 @@ int main(int argc, char **argv) {
     cbf_new_column(cbf, "data");
     int i;
     for (i = 0; i < xpixels * ypixels; i++) {
-      if (buf[i] == error_val) {
+      if ((pixel_mask[0] != -9999 && pixel_mask[i] != 0) || // the pixel mask is available
+	  (pixel_mask[0] == -9999 && buf[i] == error_val)) { // not available
 	buf_signed[i] = -1;
       } else {
 	buf_signed[i] = buf[i];
