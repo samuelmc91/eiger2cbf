@@ -59,8 +59,15 @@ from H5ToXds because they lack essential headers.
 Conversion details
 ------------------
 
-The program assumes that the pixel mask has already been applied to the images.
-The values of the invalid pixels are converted to -1 (as in Pilatus).
+The program reads the pixel mask from the master H5 file and apply it to
+the image. When the mask is 1, it outputs -1. When the mask is 2, 4, 8 or 16,
+it outputs -2. Otherwise, the program outputs the original value as is.
+
+If the pixel mask is not available, the program assumes that the pixel mask
+has already been applied to the images. The values of the invalid pixels
+(65535 if the image is 16-bit) are converted to -1 (as in Pilatus).
+However, this might also mask heavily saturated pixels. Fortunately,
+most datasets contain the pixel mask in the master H5 file.
 
 The following metadata are converted from the master h5.
 
