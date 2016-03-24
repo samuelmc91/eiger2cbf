@@ -57,11 +57,11 @@ int main(int argc, char **argv) {
   int from = -1, to = -1;
   int ret;
   double pixelsize = -1, wavelength = -1, distance = -1, count_time = -1, frame_time = -1, osc_width = -1, osc_start = -9999, thickness = -1;
-  char detector_sn[256] = {}, description[256] = {};
+  char detector_sn[256] = {}, description[256] = {}, version[256] = {};
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (build 160322)\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (build 160324)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
   fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for details.\n\n");
 
@@ -110,6 +110,8 @@ int main(int argc, char **argv) {
   fprintf(stderr, " /entry/instrument/detector/description = %s\n", description);
   H5LTread_dataset_string(hdf, "/entry/instrument/detector/detector_number", detector_sn);
   fprintf(stderr, " /entry/instrument/detector/detector_number = %s\n", detector_sn);
+  H5LTread_dataset_string(hdf, "/entry/instrument/detector/detectorSpecific/software_version", version);
+  fprintf(stderr, " /entry/instrument/detector/detectorSpecific/software_version = %s\n", version);
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/bit_depth_image", &depth);
   if (depth > 0) {
     fprintf(stderr, " /entry/instrument/detector/bit_depth_image = %d\n", depth);
@@ -118,14 +120,37 @@ int main(int argc, char **argv) {
     depth = 16;
   }
   unsigned int error_val = (unsigned int)(((unsigned long long)1 << depth) - 1);
-  H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff", &countrate_cutoff);
+
+  // Saturation value
+  // Firmware >= 1.5
+  H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/saturation_value", &countrate_cutoff);
   if (countrate_cutoff > 0) {
-    fprintf(stderr, " /entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff = %d\n", countrate_cutoff);
+    fprintf(stderr, " /entry/instrument/detector/detectorSpecific/saturation_value = %d\n", countrate_cutoff);
   } else {
-    countrate_cutoff = error_val - 1;
-    fprintf(stderr, " /entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff is not avaialble.\n");
-    fprintf(stderr, "  We will put an arbitrary large number (%d) in the header.\n", countrate_cutoff);
+    // Firmware >= 1.4
+    fprintf(stderr, "  /entry/instrument/detector/detectorSpecific/saturation_value not present. Trying another place.\n");
+    H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff", &countrate_cutoff);
+    if (countrate_cutoff > 0) {
+      fprintf(stderr, " /entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff = %d\n", countrate_cutoff);
+      countrate_cutoff++;
+    } else {
+      fprintf(stderr, "  /entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff not present. Trying another place.\n");
+      // < 1.4
+      H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/detectorModule_000/countrate_correction_count_cutoff", &countrate_cutoff);
+      if (countrate_cutoff > 0) {
+        fprintf(stderr, " /entry/instrument/detector/detectorSpecific/detectorModule_000/countrate_correction_count_cutoff = %d\n", countrate_cutoff);
+	fprintf(stderr, "  WARNING: The use of this field is not recommended now.\n");
+	fprintf(stderr, "  You might want to change the OVERLOAD setting in your subsequent processing.\n");
+        countrate_cutoff++;
+      } else {
+        fprintf(stderr, "  /entry/instrument/detector/detectorSpecific/detectorModule_000/countrate_correction_count_cutoff not present.\n");
+        countrate_cutoff = error_val - 1;
+        fprintf(stderr, "  As a last resort, we will put an arbitrary large number (%d) in the header.\n", countrate_cutoff);
+        fprintf(stderr, "  You might want to change the OVERLOAD setting in your subsequent processing.\n");
+      }
+    }
   }
+
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/sensor_thickness", &thickness); // in m 
   if (thickness > 0) {
     fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (um)\n", thickness * 1E6);
