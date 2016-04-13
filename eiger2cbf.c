@@ -180,12 +180,12 @@ int main(int argc, char **argv) {
     fprintf(stderr, "  /entry/instrument/beam/wavelength not present. Trying another place.\n");
     H5LTread_dataset_double(hdf, "/entry/instrument/monochromator/wavelength", &wavelength);
     if (wavelength > 0) {
-      fprintf(stderr, " /entry/instrument/monochromator/wavelength = %f (m)\n", wavelength);
+      fprintf(stderr, " /entry/instrument/monochromator/wavelength = %f (A)\n", wavelength);
     } else {
       fprintf(stderr, "  /entry/instrument/monochromator/wavelength not present. Trying another place.\n");
       H5LTread_dataset_double(hdf, "/entry/instrument/beam/incident_wavelength", &wavelength);
       if (wavelength > 0) {
-	fprintf(stderr, " /entry/instrument/beam/incident_wavelength = %f (m)\n", wavelength);
+	fprintf(stderr, " /entry/instrument/beam/incident_wavelength = %f (A)\n", wavelength);
       }
     }
   }
