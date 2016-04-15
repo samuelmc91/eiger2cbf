@@ -6,7 +6,7 @@ To build:
 
 Linux
 
-gcc -std=c99 -o minicbf -g \
+gcc -std=c99 -o eiger2cbf -g \
  -I$HOME/prog/dials/modules/cbflib/include \
  -L$HOME/prog/dials/build/lib -Ilz4 \
  eiger2cbf.c \
@@ -20,7 +20,7 @@ gcc -std=c99 -o minicbf -g \
 
 Mac OS X
 
-gcc -std=c99 -o minicbf -g \
+gcc -std=c99 -o eiger2cbf -g \
  -ICBFlib-0.9.5.2/include -Ilz4 \
  eiger2cbf.c \
  lz4/lz4.c lz4/h5zlz4.c \
@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (build 160324)\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (version 160415)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
   fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for details.\n\n");
 
@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
   if (depth > 0) {
     fprintf(stderr, " /entry/instrument/detector/bit_depth_image = %d\n", depth);
   } else {
-    fprintf(stderr, " /entry/instrument/detector/bit_depth_image is not avaialble. We assume 16 bit.\n");
+    fprintf(stderr, " WARNING: /entry/instrument/detector/bit_depth_image is not avaialble. We assume 16 bit.\n");
     depth = 16;
   }
   unsigned int error_val = (unsigned int)(((unsigned long long)1 << depth) - 1);
@@ -170,34 +170,62 @@ int main(int argc, char **argv) {
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/frame_time", &frame_time); // in 
   fprintf(stderr, " /entry/instrument/detector/frame_time = %f (sec)\n", frame_time);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/x_pixel_size", &pixelsize); // in 
-  H5LTread_dataset_double(hdf, "/entry/instrument/detector/detector_distance", &distance);
-  fprintf(stderr, " /entry/instrument/detector/detector_distance = %f (m)\n", distance);
   fprintf(stderr, " /entry/instrument/detector/x_pixel_size = %f (m)\n", pixelsize);
-  H5LTread_dataset_double(hdf, "/entry/instrument/beam/wavelength", &wavelength);
-  if (wavelength > 0) {
-    fprintf(stderr, " /entry/instrument/beam/wavelength = %f (A)\n", wavelength);
+
+  // Detector distance
+
+  H5LTread_dataset_double(hdf, "/entry/instrument/detector/distance", &distance); // Firmware >= 1.7
+  if (distance > 0) {
+    fprintf(stderr, " /entry/instrument/detector/distance = %f (m)\n", distance);
   } else {
-    fprintf(stderr, "  /entry/instrument/beam/wavelength not present. Trying another place.\n");
-    H5LTread_dataset_double(hdf, "/entry/instrument/monochromator/wavelength", &wavelength);
-    if (wavelength > 0) {
-      fprintf(stderr, " /entry/instrument/monochromator/wavelength = %f (A)\n", wavelength);
+    fprintf(stderr, "  /entry/instrument/detector/distance not present. Trying another place.\n");
+
+    H5LTread_dataset_double(hdf, "/entry/instrument/detector/detector_distance", &distance); // Firmware< 1.7
+    if (distance > 0) {
+      fprintf(stderr, " /entry/instrument/detector/detector_distance = %f (m)\n", distance);
     } else {
-      fprintf(stderr, "  /entry/instrument/monochromator/wavelength not present. Trying another place.\n");
-      H5LTread_dataset_double(hdf, "/entry/instrument/beam/incident_wavelength", &wavelength);
+      fprintf(stderr, "  /entry/instrument/detector/detector_distance not present.\n");
+      fprintf(stderr, " WARNING: detector distance was not defined! \"Detector distance\" field in the output is set to -1.\n");
+    }
+  }
+
+  // Wavelength
+  H5LTread_dataset_double(hdf, "/entry/sample/beam/incident_wavelength", &wavelength); // Firmware >= 1.7
+  if (wavelength > 0) {
+    fprintf(stderr, " /entry/sample/beam/incident_wavelength = %f (A)\n", wavelength);
+  } else {
+    fprintf(stderr, "  /entry/sample/beam/incident_wavelength not present. Trying another place.\n");
+
+    H5LTread_dataset_double(hdf, "/entry/instrument/beam/wavelength", &wavelength);
+    if (wavelength > 0) {
+      fprintf(stderr, " /entry/instrument/beam/wavelength = %f (A)\n", wavelength);
+    } else {
+      fprintf(stderr, "  /entry/instrument/beam/wavelength not present. Trying another place.\n");
+
+      H5LTread_dataset_double(hdf, "/entry/instrument/monochromator/wavelength", &wavelength);
       if (wavelength > 0) {
-	fprintf(stderr, " /entry/instrument/beam/incident_wavelength = %f (A)\n", wavelength);
+	fprintf(stderr, " /entry/instrument/monochromator/wavelength = %f (A)\n", wavelength);
+      } else {
+	fprintf(stderr, "  /entry/instrument/monochromator/wavelength not present. Trying another place.\n");
+
+	H5LTread_dataset_double(hdf, "/entry/instrument/beam/incident_wavelength", &wavelength); // Firmware 1.6
+	if (wavelength > 0) {
+	  fprintf(stderr, " /entry/instrument/beam/incident_wavelength = %f (A)\n", wavelength);
+	} else {
+	  fprintf(stderr, "  /entry/instrument/beam/incident_wavelength not present.\n");
+	}
       }
     }
   }
   if (wavelength < 0) {
-    fprintf(stderr, " wavelength not defined!");
+    fprintf(stderr, " WARNING: wavelength was not defined! \"Wavelength\" field in the output is set to -1.\n");
   }
 
   H5LTread_dataset_double(hdf, "/entry/sample/goniometer/omega_range_average", &osc_width);
   if (osc_width > 0) {
     fprintf(stderr, " /entry/sample/goniometer/omega_range_average = %f (deg)\n", osc_width);
   } else {
-    fprintf(stderr, " oscillation width not defined. \"Start_angle\" is set to 0!\n");
+    fprintf(stderr, " WARNING: oscillation width was not defined. \"Start_angle\" field in the output is set to 0!\n");
     osc_width = 0;
   }
   unsigned int *buf = (unsigned int*)malloc(sizeof(unsigned int) * xpixels * ypixels);
@@ -293,7 +321,7 @@ int main(int argc, char **argv) {
       osc_start = angles[frame - 1];
       fprintf(stderr, " /entry/sample/goniometer/omega[%d] = %.3f (1-indexed)\n", frame, osc_start);
     } else {
-      fprintf(stderr, " oscillation start not defined. \"Start_angle\" is set to 0!\n");
+      fprintf(stderr, " oscillation start not defined. \"Start_angle\" field in the output is set to 0!\n");
       osc_start = osc_width * frame; // old firmware
     }
 
