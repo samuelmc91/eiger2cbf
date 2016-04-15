@@ -304,18 +304,6 @@ int main(int argc, char **argv) {
   fprintf(stderr, "\nFile analysis completed.\n\n");
   int frame;
   for (frame = from; frame <= to; frame++) {
-    FILE *fh = stdout;
-    
-    if (argc > 3) {
-      if (from == to) {
-	fh = fopen(argv[3], "wb");
-      } else {
-	char filename[4096];
-	snprintf(filename, 4096, "%s%06d.cbf", argv[3], frame);
-	fh = fopen(filename, "wb");
-      }    
-    }
-
     fprintf(stderr, "Converting frame %d (%d / %d)\n", frame, frame - from + 1, to - from + 1);
     if (angles[0] != -9999) {
       osc_start = angles[frame - 1];
@@ -407,6 +395,18 @@ int main(int argc, char **argv) {
 
     /////////////////////////////////////////////////////////////////
     // Reading done. Here output starts...
+
+    FILE *fh = stdout;
+
+    if (argc > 3) {
+      if (from == to) {
+	fh = fopen(argv[3], "wb");
+      } else {
+	char filename[4096];
+	snprintf(filename, 4096, "%s%06d.cbf", argv[3], frame);
+	fh = fopen(filename, "wb");
+      }
+    }
 
     // create a CBF
     cbf_make_handle(&cbf);
