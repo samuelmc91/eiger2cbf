@@ -5,7 +5,7 @@ eiger2cbf is a simple program that converts diffraction images from
 EIGER in the HDF5 format to the miniCBF format. This program is intended
 to be used with MOSFLM. You do *not* need this program to process images
 with [DIALS](http://dials.diamond.ac.uk/); DIALS can process HDF5 images 
-directly (nightly build as of 2016 March, but not the version that comes with CCP4 7.0.0).
+directly (DIALS 1.2.0, which comes with CCP4 7.0.13).
 
 Installation
 ------------
@@ -13,7 +13,7 @@ Installation
 You can get static-linked binaries built by Harry Powell from his website.
 See the bottom of the
 [iMosflm download page](http://www.mrc-lmb.cam.ac.uk/harry/imosflm/ver721/downloads.html#Eiger2CBF).
-Note that the binaries are not necessarily the latest version.
+Note that the binaries are not necessarily the latest version (160415).
 
 To build yourself, you should edit Makefile and run `make`.
 
@@ -47,6 +47,19 @@ wrapper script named H5ToXds.
 # redirect STDERR to /dev/null so that it does not disturb console outputs from other programs.
 /path/to/eiger2cbf $@ 2>/dev/null
 ```
+
+Performance Considerations
+---------------------------
+
+I believe that eiger2cbf is fast enough for offline processing but if
+you are impatient, you might want to write a small wrapper script to
+launch multiple instances of eiger2cbf for each subset of a dataset
+(e.g. image 1 to 100, 101 to 200 and so on). Probably disk and/or
+network IO will be the next bottleneck.
+
+Online processing on a high performance storage is another story.
+Here, eiger2cbf can be a bottleneck. If there is really a demand,
+I am happy to help. Post a feature request on the Issues page.
 
 Alternative choices
 -------------------
@@ -98,6 +111,7 @@ The program has been tested on the following datasets.
 -   EIGER 16M at SLS X06SA (2016 Feb)
 -   EIGER 4M at ESRF ID30A-3
 -   EIGER 4M and 16M sample datasets on Dectris website (downloaded in 2015 Nov)
+-   EIGER 9M at SPring-8 BL32XU (2016 May)
 
 As there are many beamline and firmware-version specific
 "dialects", eiger2cbf might not work on your dataset.
