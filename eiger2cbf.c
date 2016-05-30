@@ -238,7 +238,7 @@ int main(int argc, char **argv) {
 
   // TODO: Is it always in omega?
   int bufsize = (nimages < 100000) ? 100000 : nimages;
-  double *angles = (double*)malloc(100000);
+  double *angles = (double*)malloc(bufsize * sizeof(double));
   // I don't know why but nimages can be too small ...
   if (angles == NULL) {
     fprintf(stderr, "failed to allocate buffer for omega.\n");
