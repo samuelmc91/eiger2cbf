@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (version 160415)\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (version 160530)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
   fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for details.\n\n");
 
