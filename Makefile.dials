@@ -1,0 +1,22 @@
+# This Makefile was contributed by Graeme Winter (Diamond Light Source)
+# to work in a DIALS build environment
+CBF=`libtbx.find_in_repositories cbflib`
+CBFLIB=${CBF}/lib
+CBFINC=${CBF}/include
+HDF5LIB=${CBFLIB}
+CC=gcc
+all:	
+	${CC} -std=c99 -o eiger2cbf -g \
+	-I${CBFINC} \
+	-L${CBFLIB} -Ilz4 \
+	eiger2cbf.c \
+	lz4/lz4.c lz4/h5zlz4.c \
+	bitshuffle/bshuf_h5filter.c \
+	bitshuffle/bshuf_h5plugin.c \
+	bitshuffle/bitshuffle.c \
+	${HDF5LIB}/libhdf5_hl.a \
+	${HDF5LIB}/libhdf5.a \
+	-lcbf -lm -lpthread -lz -ldl
+
+clean: 
+	rm -f *.o
