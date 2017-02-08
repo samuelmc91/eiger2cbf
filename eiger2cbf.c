@@ -50,54 +50,85 @@ void register_filters() {
   H5Zregister(&bshuf_H5Filter);
 }
 
+void usage( int argc, char **argv ) {
+    printf("Usage:\n");
+    printf("  %s [options] filename.h5           -- get number of frames\n", argv[0]);
+    printf("  %s [options] filename.h5 N out.cbf -- write N-th frame to out.cbf\n", argv[0]);
+    printf("  %s [options] filename.h5 N         -- write N-th frame to STDOUT\n", argv[0]);
+    printf("  %s [options] filename.h5 N:M   out -- write N to M-th frames to outNNNNNN.cbf\n", argv[0]);
+    printf("  N starts from 1. The file should be \"master\" h5.\n");
+    printf("  options:\n");
+    printf("    -h or --help                     -- print this message\n");
+    printf("    -v or --verbose                  -- provide more detail in output\n"); 
+    printf("  options:\n");
+    return;
+  
+}
+
+
+
 int main(int argc, char **argv) {
   cbf_handle cbf;
   char header[4096] = {};
   int xpixels = -1, ypixels = -1, beamx = -1, beamy = -1, nimages = -1, depth = -1, countrate_cutoff = -1;
   int from = -1, to = -1;
   int ret;
+  int usage_printed = 0;
+  int optcount = 0;    /* count of command line options */
+  int verbose = 0;     /* verbose mode */
+  int ii;
   double pixelsize = -1, wavelength = -1, distance = -1, count_time = -1, frame_time = -1, osc_width = -1, osc_start = -9999, thickness = -1;
   char detector_sn[256] = {}, description[256] = {}, version[256] = {};
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (version 160530)\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (version 160929)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
   fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for details.\n\n");
 
-  if (argc <= 1 || argc >= 5) { 
-    printf("Usage:\n");
-    printf("  %s filename.h5           -- get number of frames\n", argv[0]);
-    printf("  %s filename.h5 N out.cbf -- write N-th frame to out.cbf\n", argv[0]);
-    printf("  %s filename.h5 N         -- write N-th frame to STDOUT\n", argv[0]);
-    printf("  %s filename.h5 N:M   out -- write N to M-th frames to outNNNNNN.cbf\n", argv[0]);
-    printf("  N starts from 1. The file should be \"master\" h5.\n");
+  for (ii=1; ii < argc; ii++) {
+    if (!strcmp(argv[ii],"-h") || !strcmp(argv[ii],"--help")) {
+      usage (argc, argv);
+      optcount ++;
+      usage_printed ++;
+    } else if (!strcmp(argv[ii],"-v") || !strcmp(argv[ii],"--verbose")) {
+      verbose = 1;
+      optcount ++;
+    } else break;
+  }
+
+  if (argc-optcount <= 1 || argc-optcount  >= 5) {
+    if (usage_printed == 0) usage (argc, argv); 
     return -1;
   }
 
   register_filters();
 
-  hdf = H5Fopen(argv[1], H5F_ACC_RDONLY, H5P_DEFAULT);
+  hdf = H5Fopen(argv[1+optcount], H5F_ACC_RDONLY, H5P_DEFAULT);
   if (hdf < 0) {
-    fprintf(stderr, "Failed to open file %s\n", argv[1]);
+    fprintf(stderr, "Failed to open file %s\n", argv[1+optcount]);
     return -1;
   }
 
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/nimages", &nimages);
-  if (argc == 2) {
+  if (argc-optcount == 2) {
+    if (!verbose) {
     printf("%d\n", nimages);
+    } else {
+      printf("No. images: %d\n", nimages);
+    }
     H5Fclose(hdf);
     return 0;
   }
   
-  ret = sscanf(argv[2], "%d:%d", &from, &to);
+  ret = sscanf(argv[2+optcount], "%d:%d", &from, &to);
   if (ret == 0) {
     fprintf(stderr, "Failed to parse output frame number(s).");
     return -1;\
   } else if (ret == 1) {
     to = from;
   }
-  if (to != from && argc < 4) {
+  if (to != from && argc-optcount < 4) {
     fprintf(stderr, "You cannot output multiple images into STDOUT.");
     return -1;
   }
@@ -398,12 +429,12 @@ int main(int argc, char **argv) {
 
     FILE *fh = stdout;
 
-    if (argc > 3) {
+    if (argc-optcount > 3) {
       if (from == to) {
-	fh = fopen(argv[3], "wb");
+	fh = fopen(argv[3+optcount], "wb");
       } else {
 	char filename[4096];
-	snprintf(filename, 4096, "%s%06d.cbf", argv[3], frame);
+	snprintf(filename, 4096, "%s%06d.cbf", argv[3+optcount], frame);
 	fh = fopen(filename, "wb");
       }
     }
