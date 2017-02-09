@@ -34,8 +34,9 @@ gcc -std=c99 -o eiger2cbf -g \
 
 */
 
-#include "stdio.h"
-#include "stdlib.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cbf.h"
 #include "cbf_simple.h"
@@ -60,24 +61,32 @@ void usage( int argc, char **argv ) {
     printf("  options:\n");
     printf("    -h or --help                     -- print this message\n");
     printf("    -v or --verbose                  -- provide more detail in output\n"); 
-    printf("  options:\n");
-    return;
-  
+    printf("    --beam-center beamx,beamy        -- new beam center in pixels\n");
+    return;  
 }
+
 
 
 
 int main(int argc, char **argv) {
   cbf_handle cbf;
   char header[4096] = {};
-  int xpixels = -1, ypixels = -1, beamx = -1, beamy = -1, nimages = -1, depth = -1, countrate_cutoff = -1;
+  int xpixels = -1, ypixels = -1; 
+  double beamx = -1, beamy = -1;
+  long ibeamx, ibeamy; 
+  int nimages = -1, depth = -1, countrate_cutoff = -1;
+  double nbeamx = -1, nbeamy = -1;
   int from = -1, to = -1;
   int ret;
   int usage_printed = 0;
-  int optcount = 0;    /* count of command line options */
-  int verbose = 0;     /* verbose mode */
+  int optcount = 0;      /* count of command line options */
+  int verbose = 0;       /* verbose mode */
+  int new_beam_cent = 0; /* new beam center provided */
   int ii;
-  double pixelsize = -1, wavelength = -1, distance = -1, count_time = -1, frame_time = -1, osc_width = -1, osc_start = -9999, thickness = -1;
+  char* endptr;
+  char* fndptr;
+  double pixelsize = -1, wavelength = -1, distance = -1, count_time = -1, 
+    frame_time = -1, osc_width = -1, osc_start = -9999, thickness = -1;
   char detector_sn[256] = {}, description[256] = {}, version[256] = {};
 
   hid_t hdf;
@@ -94,6 +103,35 @@ int main(int argc, char **argv) {
     } else if (!strcmp(argv[ii],"-v") || !strcmp(argv[ii],"--verbose")) {
       verbose = 1;
       optcount ++;
+    } else if (!strcmp(argv[ii],"--beam-center")) {
+      new_beam_cent = 1;
+      optcount ++;
+      if (ii  < argc-1) {
+        ii++;
+        optcount ++;
+        nbeamx=strtod(argv[ii],&endptr);
+        if (!endptr || endptr==argv[ii] || *endptr!=',') {
+          new_beam_cent = 0;
+          fprintf(stderr, "eiger2cbf error:  --beam-center provided without two comma-separated values; ignored\n");
+          usage(argc, argv);
+          usage_printed  ++;
+        } else {
+          endptr++;
+          nbeamy=strtod(endptr,&fndptr);
+          if (!fndptr || fndptr==endptr|| *fndptr!='\0') {
+              new_beam_cent = 0;
+              fprintf(stderr, "eiger2cbf error:  --beam-center provided without two comma-separated values; ignored\n");
+              usage(argc, argv);
+              usage_printed  ++;
+          }
+        }     
+      } else {
+        fprintf(stderr, "eiger2cbf error:  --beam-center provided without a value; ignored\n");
+        usage(argc, argv);
+        usage_printed  ++;
+        new_beam_cent = 0;
+        
+      }
     } else break;
   }
 
@@ -193,9 +231,9 @@ int main(int argc, char **argv) {
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/y_pixels_in_detector", &ypixels);
   fprintf(stderr, " /entry/instrument/detector/detectorSpecific/{x,y}_pixels_in_detector = (%d, %d) (px)\n",
 	  xpixels, ypixels);
-  H5LTread_dataset_int(hdf, "/entry/instrument/detector/beam_center_x", &beamx);
-  H5LTread_dataset_int(hdf, "/entry/instrument/detector/beam_center_y", &beamy);
-  fprintf(stderr, " /entry/instrument/detector/beam_center_{x,y} = (%d, %d) (px)\n", beamx, beamy);
+  H5LTread_dataset_double(hdf, "/entry/instrument/detector/beam_center_x", &beamx);
+  H5LTread_dataset_double(hdf, "/entry/instrument/detector/beam_center_y", &beamy);
+  fprintf(stderr, " /entry/instrument/detector/beam_center_{x,y} = (%.2f, %.2f) (px)\n", new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/count_time", &count_time); // in m
   fprintf(stderr, " /entry/instrument/detector/count_time = %f (sec)\n", count_time);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/frame_time", &frame_time); // in 
@@ -360,7 +398,7 @@ int main(int argc, char **argv) {
       "# Count_cutoff %d counts\n"
       "# Wavelength %f A\n"
       "# Detector_distance %f m\n"
-      "# Beam_xy (%d, %d) pixels\n"
+      "# Beam_xy (%.2f, %.2f) pixels\n"
       "# Start_angle %f deg.\n"
       "# Angle_increment %f deg.\n";
 
@@ -370,7 +408,7 @@ int main(int argc, char **argv) {
 	     thickness,
 	     (int)(pixelsize * 1E6), (int)(pixelsize * 1E6),
 	     count_time, frame_time, countrate_cutoff, wavelength, distance,
-	     beamx, beamy, osc_start, osc_width);
+	     new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy, osc_start, osc_width);
 
 
     // Now open the required data
