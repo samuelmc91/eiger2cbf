@@ -1,6 +1,7 @@
 /*
  EIGER HDF5 reader plugin
   written by Takanori Nakane, 2017/3/23
+  based on Keitaro Yamashita's serial version.
 
 Reference:
  https://github.com/dectris/dummy_xds_hook
@@ -275,6 +276,8 @@ int get_data(int myid, int frame_number, int *mapped_buf) {
  
   if (prev_block_number != block_number) {
     prev_block_number = block_number;
+
+    // TODO: fix this resource leak!
 //    if (data != NULL) H5Gclose(data); 
 //    if (dataspace != NULL) H5Dclose(dataspace);
 
