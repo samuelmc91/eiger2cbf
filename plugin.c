@@ -39,7 +39,7 @@ To build:
 #include "hdf5_hl.h"
 #include "hdf5.h"
 
-#define NCHILD 4 // EDIT!
+#define NCHILD 16 // EDIT!
 
 extern const H5Z_class2_t H5Z_LZ4;
 extern const H5Z_class2_t bshuf_H5Filter;
@@ -51,11 +51,11 @@ void register_filters() {
 struct GlobalData {
   char filename[300];
   hid_t hdf, group;
-  int dimx;
-  int dimy;
+  int dimx, dimy;
+  int Nminus1, Nminus2;
   int datasize;
   int nframesPerDataset;
-  signed int *pixel_mask;
+  signed int *minus1, *minus2;
   float xpixelSize;
   float ypixelSize;
   int block_start;
@@ -170,15 +170,25 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
   GLOBAL_DATA->dimy = ypixels;
 
   /* Pixel mask */
-  GLOBAL_DATA->pixel_mask = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
-  GLOBAL_DATA->pixel_mask[0] = -9999;
-  H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/pixel_mask", GLOBAL_DATA->pixel_mask);
-  if (GLOBAL_DATA->pixel_mask[0] == -9999) {
-    fprintf(stderr, "PLUGIN ERROR: failed to read the pixel mask from /entry/instrument/detector/detectorSpecific/pixel_mask.\n");
-    *error_flag = -4;
-    return;
+  GLOBAL_DATA->minus1 = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
+  GLOBAL_DATA->minus2 = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
+  signed int* pixel_mask = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
+  GLOBAL_DATA->Nminus1 = 0;
+  GLOBAL_DATA->Nminus2 = 0;
+  pixel_mask[0] = -9999;
+  H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/pixel_mask", pixel_mask);
+  if (pixel_mask[0] == -9999) {
+    fprintf(stderr, "PLUGIN WARNING: failed to read the pixel mask from /entry/instrument/detector/detectorSpecific/pixel_mask.\n");
+    GLOBAL_DATA->Nminus1 = -1;
+  } else {
+    for (int i =0, ilim = xpixels * ypixels; i < ilim; i++) {
+      if (pixel_mask[i] == 1) GLOBAL_DATA->minus1[GLOBAL_DATA->Nminus1++] = i;
+      else if (pixel_mask[i] > 1) GLOBAL_DATA->minus2[GLOBAL_DATA->Nminus2++] = i;
+    }
   }
-  
+  fprintf(stderr, "PLUGIN: #pixels masked to -1 = %d, to -2 = %d.\n", GLOBAL_DATA->Nminus1, GLOBAL_DATA->Nminus2++);
+  free(pixel_mask);
+
   /* Number of images */
   int nimages = -1;
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/nimages", &nimages);
@@ -277,9 +287,8 @@ int get_data(int myid, int frame_number, int *mapped_buf) {
   if (prev_block_number != block_number) {
     prev_block_number = block_number;
 
-    // TODO: fix this resource leak!
-//    if (data != NULL) H5Gclose(data); 
-//    if (dataspace != NULL) H5Dclose(dataspace);
+    if (data != NULL) H5Dclose(data); 
+    if (dataspace != NULL) H5Sclose(dataspace);
 
     snprintf(data_name, 20, "data_%06d", block_number); 
     data = H5Dopen2(GLOBAL_DATA->group, data_name, H5P_DEFAULT);
@@ -305,13 +314,13 @@ int get_data(int myid, int frame_number, int *mapped_buf) {
 
     memspace = H5Screate_simple(3, dims, NULL);
     if (memspace < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d for frame #%d: failed to create memspace\n", myid, frame_number);
+      fprintf(stderr, "PLUGIN CHILD %d for frame #%d: failed to create memspace.\n", myid, frame_number);
       return -4;
     }
     ret = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, offset_out, NULL, 
                               count, NULL);
     if (ret < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for memory failed\n", myid, frame_number);
+      fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for memory failed.\n", myid, frame_number);
       return -2;
     }
   }
@@ -319,26 +328,27 @@ int get_data(int myid, int frame_number, int *mapped_buf) {
   /* Get the frame */
   ret = H5Sselect_hyperslab(dataspace, H5S_SELECT_SET, offset_in, NULL, count, NULL);
   if (ret < 0) {
-    fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for file failed\n", myid, frame_number);
+    fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for file failed.\n", myid, frame_number);
     return -2;
   }
 
   ret = H5Dread(data, H5T_NATIVE_UINT, memspace, dataspace, H5P_DEFAULT, mapped_buf);
   if (ret < 0) {
-    fprintf(stderr, "PLUGIN CHILD %d for frame #%d: H5Dread for image failed. Wrong frame number?\n", myid, frame_number);
+    fprintf(stderr, "PLUGIN CHILD %d for frame #%d: H5Dread for image failed.\n", myid, frame_number);
     return -2;
   }
 
-  signed int *pixel_mask = GLOBAL_DATA->pixel_mask;
   int error_val = GLOBAL_DATA->error_val;
-  if (pixel_mask[0] == -9999) {// pixel mask is not available
+  if (GLOBAL_DATA->Nminus1 < 0) {// pixel mask is not available
     for (int i = 0, ilim = xpixels * ypixels; i < ilim; i++) {
       if (mapped_buf[i] == error_val) mapped_buf[i] = -1;
     }
   } else { // pixel mask is available
-    for (int i = 0, ilim = xpixels * ypixels; i < ilim; i++) {
-      if (pixel_mask[i] == 1) mapped_buf[i] = -1;
-      else if (pixel_mask[i] > 1) mapped_buf[i] = -2;
+    for (int i = 0, ilim = GLOBAL_DATA->Nminus1; i < ilim; i++) {
+      mapped_buf[GLOBAL_DATA->minus1[i]] = -1;
+    }
+    for (int i = 0, ilim = GLOBAL_DATA->Nminus2; i < ilim; i++) {
+      mapped_buf[GLOBAL_DATA->minus2[i]] = -1;
     }
   }
   
@@ -369,14 +379,14 @@ void child_loop(int myid) {
     if (frame_num == -999) break;
 
     /* do the work */
-    //fprintf(stderr, "PLUGIN CHILD %d: got request for frame #%d\n", myid, frame_num);
+//    fprintf(stderr, "PLUGIN CHILD %d: got request for frame #%d.\n", myid, frame_num);
     int retval = get_data(myid, frame_num, GLOBAL_DATA->mapped_bufs[myid]);
 
     /* send back the result */
     if (write(GLOBAL_DATA->ctop_pipes[myid][1], &retval, sizeof(int)) < 0) {
       fprintf(stderr, "PLUGIN CHILD %d ERROR: cannot write to parent.\n", myid);
     }
-    //fprintf(stderr, "PLUGIN CHILD %d: processed frame #%d with retval %d\n", myid, frame_num, retval);
+//    fprintf(stderr, "PLUGIN CHILD %d: processed frame #%d with retval %d.\n", myid, frame_num, retval);
   }
 
   fprintf(stderr, "PLUGIN CHILD %d: finished.\n", myid);
@@ -387,28 +397,30 @@ void plugin_get_data(int *frame_number, int *nx, int *ny,
 		     int data_array[], int info_array[1024],
 		     int *error_flag) {
   if (GLOBAL_DATA == NULL){
-    fprintf(stderr, "PLUGIN ERROR: plugin_get_data called before plugin_open\n");
+    fprintf(stderr, "PLUGIN ERROR: plugin_get_data called before plugin_open.\n");
     *error_flag = -4;
     return;
   }
 
   int child_id = *frame_number % NCHILD;
   pthread_mutex_lock(&GLOBAL_DATA->locks[child_id]);
-  fprintf(stderr, "PLUGIN PARENT: get_data for frame #%d delegated to child #%d\n", *frame_number, child_id);
+  fprintf(stderr, "PLUGIN PARENT: get_data for frame #%d delegated to child #%d.\n", *frame_number, child_id);
   if (write(GLOBAL_DATA->ptoc_pipes[child_id][1], frame_number, sizeof(int)) < 0) {
-    fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for frame #%d\n", child_id, *frame_number);
+    fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for frame #%d.\n", child_id, *frame_number);
     *error_flag = -1;
     return;
   }
 
   int retval;
   if (read(GLOBAL_DATA->ctop_pipes[child_id][0], &retval, sizeof(int)) < 0) {
-    fprintf(stderr, "PLUGIN ERROR: cannot read from child #%d for frame #%d\n", child_id, *frame_number);
+    fprintf(stderr, "PLUGIN ERROR: cannot read from child #%d for frame #%d.\n", child_id, *frame_number);
     *error_flag = -1;
     return;
   }
-  //fprintf(stderr, "PLUGIN PARENT: received %d for frame #%d from child #%d\n", retval, *frame_number, child_id);
-  memcpy(data_array, GLOBAL_DATA->mapped_bufs[child_id], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
+//  fprintf(stderr, "PLUGIN PARENT: received %d for frame #%d from child #%d.\n", retval, *frame_number, child_id);
+  if (retval == 0) {
+    memcpy(data_array, GLOBAL_DATA->mapped_bufs[child_id], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
+  }
   pthread_mutex_unlock(&GLOBAL_DATA->locks[child_id]);
 
   *error_flag = retval;
@@ -424,5 +436,4 @@ void plugin_close(int *error_flag){
       fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for exit.\n", i);
     }
   }
-  free(GLOBAL_DATA->pixel_mask);
 }
