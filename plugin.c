@@ -18,7 +18,7 @@ To build:
      bitshuffle/bshuf_h5filter.c \
      bitshuffle/bshuf_h5plugin.c \
      bitshuffle/bitshuffle.c \
-     -lpthread -lhdf5_hl -lhdf5 -O3
+     -lpthread -lhdf5_hl -lhdf5 -lrt
 
  Mac OS:
  TODO: need to test.
