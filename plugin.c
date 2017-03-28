@@ -1,6 +1,6 @@
 /*
  EIGER HDF5 reader plugin
-  written by Takanori Nakane, 2017/3/23
+  written by Takanori Nakane, 2017/3/28
   based on Keitaro Yamashita's serial version.
 
 Reference:
@@ -22,6 +22,10 @@ To build:
 
  Mac OS:
  TODO: need to test.
+
+TODO:
+ Need better error exit to ensure shared memories are freed.
+
 */
 
 #include <stdio.h>
@@ -35,11 +39,15 @@ To build:
 
 #include <unistd.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 #include <signal.h>
 #include "hdf5_hl.h"
 #include "hdf5.h"
 
-#define NCHILD 16 // EDIT!
+#define INVALID -9999
+
+#define MAXCHILD 64
+#define DEFAULT_NCHILD 16
 
 extern const H5Z_class2_t H5Z_LZ4;
 extern const H5Z_class2_t bshuf_H5Filter;
@@ -50,20 +58,21 @@ void register_filters() {
 
 struct GlobalData {
   char filename[300];
+  char shm_names[MAXCHILD][NAME_MAX];
   hid_t hdf, group;
   int dimx, dimy;
   int Nminus1, Nminus2;
   int datasize;
   int nframesPerDataset;
-  signed int *minus1, *minus2;
   float xpixelSize;
   float ypixelSize;
   int block_start;
   unsigned int error_val;
-  pthread_mutex_t locks[NCHILD];
-  unsigned int *mapped_bufs[NCHILD];
-  int ctop_pipes[NCHILD][2]; 
-  int ptoc_pipes[NCHILD][2];
+  int nchild;
+  pthread_mutex_t locks[MAXCHILD];
+  unsigned int *mapped_bufs[MAXCHILD];
+  int ctop_pipes[MAXCHILD][2]; 
+  int ptoc_pipes[MAXCHILD][2];
 };
 struct GlobalData *GLOBAL_DATA = NULL;
 
@@ -103,27 +112,84 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
     return;
   }
 
+  /* Decide the number of child */
+  char *env_nchild = getenv("PLUGIN_NCHILD"); // Do not free!
+  if (env_nchild == NULL) {
+    GLOBAL_DATA->nchild = DEFAULT_NCHILD;
+  } else {
+    GLOBAL_DATA->nchild = atoi(env_nchild);
+    if (GLOBAL_DATA->nchild > MAXCHILD) {
+      fprintf(stderr, "PLUGIN WARNING: The maximum number of the child processes is limited to %d.\n", MAXCHILD);
+      GLOBAL_DATA->nchild = MAXCHILD;
+    }
+  }
+  fprintf(stderr, "PLUGIN INFO: Running with %d child processes.\n", GLOBAL_DATA->nchild);
+
   int nx, ny, nbytes, nframes, info[1024], dummy;
   float qx, qy;
   plugin_get_header(&nx, &ny, &nbytes, &qx, &qy, &nframes, info, &dummy);
 
   /* Setup and start child processes */
-  for (int i = 0; i < NCHILD; i++) {
+  int ppid = getpid();
+  char child_id[16];
+
+  for (int i = 0; i < GLOBAL_DATA->nchild; i++) {
+    snprintf(child_id, 16, "%d", i);
     pthread_mutex_init(&GLOBAL_DATA->locks[i], NULL);
+
+    /* setup bi-directional pipes to child process */
     int pipe1 = pipe(&GLOBAL_DATA->ctop_pipes[i][0]);
     int pipe2 = pipe(&GLOBAL_DATA->ptoc_pipes[i][0]);
-    GLOBAL_DATA->mapped_bufs[i] = mmap(0, sizeof(unsigned int) * nx * ny, 
-                                         PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-    // MAP_HUGETLB | 25 << MAP_HUGE_SHIFT causes SEGV in HDF5 lib
+    if (pipe1 < 0 || pipe2 < 0) {
+      fprintf(stderr, "PLUGIN ERROR: Failed to create pipes for child %d.\n", i);
+      *error_flag = -2;
+      return;
+    }
 
+    /* allocate shared memory and setup memory mapping */
+    snprintf(GLOBAL_DATA->shm_names[i], NAME_MAX, "/plugin%d_%d.shm", ppid, i);
+    int shm_fd = shm_open(GLOBAL_DATA->shm_names[i], O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (shm_fd == -1) {
+      fprintf(stderr, "PLUGIN ERROR: failed to create shared memory %s.\n", GLOBAL_DATA->shm_names[i]);
+      *error_flag = -2;
+      return;
+    }
+    if (ftruncate(shm_fd, sizeof(unsigned int) * nx * ny) < 0) {
+      fprintf(stderr, "PLUGIN ERROR: failed to set the size of shared memory %s.\n", GLOBAL_DATA->shm_names[i]);
+      *error_flag = -2;
+      return;
+    }
+    GLOBAL_DATA->mapped_bufs[i] = mmap(0, sizeof(unsigned int) * nx * ny, 
+                                          PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    // MAP_HUGETLB | 25 << MAP_HUGE_SHIFT causes SEGV in HDF5 lib
+    if (GLOBAL_DATA->mapped_bufs[i] == NULL) {
+      fprintf(stderr, "PLUGIN ERROR: failed to mmap %s\n", GLOBAL_DATA->shm_names[i]);
+      *error_flag = -2;
+      return;
+    }
+
+    /* start child process */
     int pid = fork();
-    if (pipe1 < 0 || pipe2 < 0 || pid < 0) {
+    if (pid < 0) {
       fprintf(stderr, "PLUGIN ERROR: Failed to create subprocess.\n");
       *error_flag = -2;
       return;
     }
     if (pid == 0) {
-       child_loop(i);
+      /* This is a child */
+      dup2(GLOBAL_DATA->ptoc_pipes[i][0], 0); // replace STDIN
+      dup2(GLOBAL_DATA->ctop_pipes[i][1], 1); // replace STDOUT
+      close(GLOBAL_DATA->ctop_pipes[i][0]);
+      close(GLOBAL_DATA->ctop_pipes[i][1]);
+      close(GLOBAL_DATA->ptoc_pipes[i][0]);
+      close(GLOBAL_DATA->ptoc_pipes[i][1]);
+      execlp("plugin-worker", "plugin-worker", fn, GLOBAL_DATA->shm_names[i], child_id, NULL);
+      fprintf(stderr, "PLUGIN CHILD: Failed to launch plugin-worker. Is it in the PATH?\n");
+      exit(-1);
+    } else {
+      /* This is the parent */
+      close(GLOBAL_DATA->ctop_pipes[i][1]);
+      close(GLOBAL_DATA->ptoc_pipes[i][0]);
     }
   }
 
@@ -168,26 +234,6 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/y_pixels_in_detector", &ypixels);
   GLOBAL_DATA->dimx = xpixels;
   GLOBAL_DATA->dimy = ypixels;
-
-  /* Pixel mask */
-  GLOBAL_DATA->minus1 = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
-  GLOBAL_DATA->minus2 = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
-  signed int* pixel_mask = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
-  GLOBAL_DATA->Nminus1 = 0;
-  GLOBAL_DATA->Nminus2 = 0;
-  pixel_mask[0] = -9999;
-  H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/pixel_mask", pixel_mask);
-  if (pixel_mask[0] == -9999) {
-    fprintf(stderr, "PLUGIN WARNING: failed to read the pixel mask from /entry/instrument/detector/detectorSpecific/pixel_mask.\n");
-    GLOBAL_DATA->Nminus1 = -1;
-  } else {
-    for (int i =0, ilim = xpixels * ypixels; i < ilim; i++) {
-      if (pixel_mask[i] == 1) GLOBAL_DATA->minus1[GLOBAL_DATA->Nminus1++] = i;
-      else if (pixel_mask[i] > 1) GLOBAL_DATA->minus2[GLOBAL_DATA->Nminus2++] = i;
-    }
-  }
-  fprintf(stderr, "PLUGIN: #pixels masked to -1 = %d, to -2 = %d.\n", GLOBAL_DATA->Nminus1, GLOBAL_DATA->Nminus2++);
-  free(pixel_mask);
 
   /* Number of images */
   int nimages = -1;
@@ -272,127 +318,6 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
   return;
 }
 
-int prev_block_number = -1;
-hid_t data = NULL, dataspace = NULL, memspace=NULL;
-
-int get_data(int myid, int frame_number, int *mapped_buf) {
-  int ret;
-  int xpixels = GLOBAL_DATA->dimx, ypixels = GLOBAL_DATA->dimy;
-
-  int block_number = GLOBAL_DATA->block_start + (frame_number - 1) / GLOBAL_DATA->nframesPerDataset;
-  int frame_in_block = (frame_number - 1) % GLOBAL_DATA->nframesPerDataset;
-
-  char data_name[20] = {};
- 
-  if (prev_block_number != block_number) {
-    prev_block_number = block_number;
-
-    if (data != NULL) H5Dclose(data); 
-    if (dataspace != NULL) H5Sclose(dataspace);
-
-    snprintf(data_name, 20, "data_%06d", block_number); 
-    data = H5Dopen2(GLOBAL_DATA->group, data_name, H5P_DEFAULT);
-    dataspace = H5Dget_space(data);
-    if (data < 0) {
-      fprintf(stderr, "failed to open /entry/%s\n", data_name);
-      return -4;
-    }
-    if (H5Sget_simple_extent_ndims(dataspace) != 3) {
-      fprintf(stderr, "Dimension of /entry/%s is not 3!\n", data_name);
-      return -4;
-    }
-  }
-
-  hsize_t offset_in[3] = {frame_in_block, 0, 0};
-  hsize_t offset_out[3] = {0, 0, 0};
-  hsize_t count[3] = {1, ypixels, xpixels};
-
-  /* Create memory space */
-  if (memspace == NULL) {
-    hsize_t dims[3];
-    H5Sget_simple_extent_dims(dataspace, dims, NULL);
-
-    memspace = H5Screate_simple(3, dims, NULL);
-    if (memspace < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d for frame #%d: failed to create memspace.\n", myid, frame_number);
-      return -4;
-    }
-    ret = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, offset_out, NULL, 
-                              count, NULL);
-    if (ret < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for memory failed.\n", myid, frame_number);
-      return -2;
-    }
-  }
-  
-  /* Get the frame */
-  ret = H5Sselect_hyperslab(dataspace, H5S_SELECT_SET, offset_in, NULL, count, NULL);
-  if (ret < 0) {
-    fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for file failed.\n", myid, frame_number);
-    return -2;
-  }
-
-  ret = H5Dread(data, H5T_NATIVE_UINT, memspace, dataspace, H5P_DEFAULT, mapped_buf);
-  if (ret < 0) {
-    fprintf(stderr, "PLUGIN CHILD %d for frame #%d: H5Dread for image failed.\n", myid, frame_number);
-    return -2;
-  }
-
-  int error_val = GLOBAL_DATA->error_val;
-  if (GLOBAL_DATA->Nminus1 < 0) {// pixel mask is not available
-    for (int i = 0, ilim = xpixels * ypixels; i < ilim; i++) {
-      if (mapped_buf[i] == error_val) mapped_buf[i] = -1;
-    }
-  } else { // pixel mask is available
-    for (int i = 0, ilim = GLOBAL_DATA->Nminus1; i < ilim; i++) {
-      mapped_buf[GLOBAL_DATA->minus1[i]] = -1;
-    }
-    for (int i = 0, ilim = GLOBAL_DATA->Nminus2; i < ilim; i++) {
-      mapped_buf[GLOBAL_DATA->minus2[i]] = -1;
-    }
-  }
-  
-  return 0; 
-}
-
-void usr1_handler(int dummy) {
-  // don't care open handlers and memories; we are going to die!
-  exit(0);
-}
-
-void child_loop(int myid) {
-  printf("PLUGIN CHILD %d: started.\n", myid);
-
-  // Some programs do not call plugin_close :-<
-  #ifdef HAVE_SYS_PRCTL_H
-  signal(SIGUSR1, usr1_handler);
-  prctl(PR_SET_PDEATHSIG, SIGUSR1); // TODO: this is not supported on Mac OS.
-  #endif
-
-  int frame_num;
-  while (1) {
-    /* receive command from the parent */
-    if (read(GLOBAL_DATA->ptoc_pipes[myid][0], &frame_num, sizeof(int)) < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d ERROR: cannot read from parent.\n", myid);
-      // we cannot do anything but crash!
-    }
-    if (frame_num == -999) break;
-
-    /* do the work */
-//    fprintf(stderr, "PLUGIN CHILD %d: got request for frame #%d.\n", myid, frame_num);
-    int retval = get_data(myid, frame_num, GLOBAL_DATA->mapped_bufs[myid]);
-
-    /* send back the result */
-    if (write(GLOBAL_DATA->ctop_pipes[myid][1], &retval, sizeof(int)) < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d ERROR: cannot write to parent.\n", myid);
-    }
-//    fprintf(stderr, "PLUGIN CHILD %d: processed frame #%d with retval %d.\n", myid, frame_num, retval);
-  }
-
-  fprintf(stderr, "PLUGIN CHILD %d: finished.\n", myid);
-  exit(-1);
-}
-
 void plugin_get_data(int *frame_number, int *nx, int *ny,
 		     int data_array[], int info_array[1024],
 		     int *error_flag) {
@@ -402,7 +327,7 @@ void plugin_get_data(int *frame_number, int *nx, int *ny,
     return;
   }
 
-  int child_id = *frame_number % NCHILD;
+  int child_id = *frame_number % GLOBAL_DATA->nchild;
   pthread_mutex_lock(&GLOBAL_DATA->locks[child_id]);
   fprintf(stderr, "PLUGIN PARENT: get_data for frame #%d delegated to child #%d.\n", *frame_number, child_id);
   if (write(GLOBAL_DATA->ptoc_pipes[child_id][1], frame_number, sizeof(int)) < 0) {
@@ -430,10 +355,12 @@ void plugin_get_data(int *frame_number, int *nx, int *ny,
 void plugin_close(int *error_flag){
   printf("PLUGIN PARENT: plugin_close called.\n");
 
-  for (int i = 0; i < NCHILD; i++) {
-    int val = -999;
+  for (int i = 0; i < GLOBAL_DATA->nchild; i++) {
+    int val = INVALID;
     if (write(GLOBAL_DATA->ptoc_pipes[i][1], &val, sizeof(int)) < 0) {
       fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for exit.\n", i);
     }
+    munmap(GLOBAL_DATA->mapped_bufs[i], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
+    shm_unlink(GLOBAL_DATA->shm_names[i]);
   }
 }
