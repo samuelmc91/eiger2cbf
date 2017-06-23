@@ -35,18 +35,24 @@ TODO:
 
 #ifdef __linux
  #include <sys/prctl.h>
+ #include <linux/limits.h>
 #endif
 
 #include <unistd.h>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <H5Ppublic.h>
+#include "H5api_adpt.h"
 #include "hdf5_hl.h"
 #include "hdf5.h"
 
 #define INVALID -9999
 
-#define MAXCHILD 64
+#define MAXCHILD 256
 #define DEFAULT_NCHILD 16
 
 extern const H5Z_class2_t H5Z_LZ4;
@@ -183,8 +189,8 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
       close(GLOBAL_DATA->ctop_pipes[i][1]);
       close(GLOBAL_DATA->ptoc_pipes[i][0]);
       close(GLOBAL_DATA->ptoc_pipes[i][1]);
-      execlp("plugin-worker", "plugin-worker", fn, GLOBAL_DATA->shm_names[i], child_id, NULL);
-      fprintf(stderr, "PLUGIN CHILD: Failed to launch plugin-worker. Is it in the PATH?\n");
+      execlp("eiger2cbf-so-worker", "eiger2cbf-so-plugin-worker", fn, GLOBAL_DATA->shm_names[i], child_id, NULL);
+      fprintf(stderr, "PLUGIN CHILD: Failed to launch eiger2cbf-so-worker. Is it in the PATH?\n");
       exit(-1);
     } else {
       /* This is the parent */

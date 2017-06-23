@@ -30,6 +30,8 @@ To build:
 #include <string.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <H5Ppublic.h>
+#include "H5api_adpt.h"
 #include "hdf5_hl.h"
 #include "hdf5.h"
 

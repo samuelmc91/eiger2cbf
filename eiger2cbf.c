@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
   double beamx = -1, beamy = -1;
   long ibeamx, ibeamy; 
   int nimages = -1, depth = -1, countrate_cutoff = -1;
+  int ntrigger = -1;
   double nbeamx = -1, nbeamy = -1;
   int from = -1, to = -1;
   int ret;
@@ -149,6 +150,13 @@ int main(int argc, char **argv) {
   }
 
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/nimages", &nimages);
+  H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/ntrigger", &ntrigger);
+  if (nimages == 1 && ntrigger > 1) {
+    fprintf(stderr, "nimages == 1 and ntrigger == %d \n", ntrigger);
+    fprintf(stderr, "setting nimages to ntrigger \n");
+    nimages = ntrigger;
+
+  }
   if (argc-optcount == 2) {
     if (!verbose) {
     printf("%d\n", nimages);
