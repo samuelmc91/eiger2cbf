@@ -1,11 +1,12 @@
 # This Makefile was contributed by Harry Powell (MRC-LMB)
-# Revised for NSLS-II LSBR cluster HJB, 17 Aug 16
+# Revised for NSLS-II LSBR cluster HJB, 17 Aug 16, 6 Jul 17
 
 PREFIX ?=	/usr/local/crys-prod
 CBFLIB ?=	$(PREFIX)/lib
 CBFINC ?=	$(PREFIX)/include/cbflib
 HDF5LIB ?=	$(PREFIX)/lib
-CC=gcc -O3
+CC 	?=	gcc
+CFLAGS	?=	-std=c99 -g -O3
 
 all:	eiger2cbf eiger2cbf.so eiger2cbf-so-worker
 	
@@ -13,7 +14,7 @@ eiger2cbf:  eiger2cbf.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c 
-	${CC} -std=c99 -o eiger2cbf -g \
+	${CC} ${CFLAGS} -o eiger2cbf \
 	-I${CBFINC} \
 	eiger2cbf.c \
         -Ilz4 \
@@ -31,7 +32,7 @@ eiger2cbf-so-worker:	plugin-worker.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c
-	${CC} -std=c99 -o eiger2cbf-so-worker -g -O3 \
+	${CC} ${CFLAGS} -o eiger2cbf-so-worker \
 	-I${CBFINC} \
 	plugin-worker.c \
 	-Ilz4 lz4/lz4.c lz4/h5zlz4.c \
@@ -45,7 +46,7 @@ eiger2cbf.so:	plugin.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c
-	${CC} -std=c99 -o eiger2cbf.so -shared -fPIC -g -O3 \
+	${CC} ${CFLAGS} -o eiger2cbf.so -shared -fPIC \
 	-I${CBFINC} \
 	plugin.c \
 	-Ilz4 lz4/lz4.c lz4/h5zlz4.c \
@@ -55,7 +56,14 @@ eiger2cbf.so:	plugin.c \
 	-L${HDF5LIB} -lpthread -lhdf5_hl -lhdf5 -lrt
 	
 
-install: all
+$(PREFIX)/bin:
+	mkdir -p $(PREFIX)/bin
+	
+$(PREFIX)/lib:
+	mkdir -p $(PREFIX)/lib
+
+install: all $(PREFIX)/bin $(PREFIX)/lib \
+	eiger2cbf_par eiger2cbf eiger2cbf.so eiger2cbf-so-worker
 	cp eiger2cbf $(PREFIX)/bin/eiger2cbf
 	chmod 755 $(PREFIX)/bin/eiger2cbf
 	cp eiger2cbf-so-worker $(PREFIX)/bin/eiger2cbf-so-worker

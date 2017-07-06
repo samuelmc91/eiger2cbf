@@ -62,6 +62,7 @@ void usage( int argc, char **argv ) {
     printf("    -h or --help                     -- print this message\n");
     printf("    -v or --verbose                  -- provide more detail in output\n"); 
     printf("    --beam-center beamx,beamy        -- new beam center in pixels\n");
+    printf("    --nimages images                 -- override the number of images\n");
     return;  
 }
 
@@ -77,12 +78,15 @@ int main(int argc, char **argv) {
   int nimages = -1, depth = -1, countrate_cutoff = -1;
   int ntrigger = -1;
   double nbeamx = -1, nbeamy = -1;
+  long nnimages = -1L;
   int from = -1, to = -1;
   int ret;
+  int retfromto;
   int usage_printed = 0;
   int optcount = 0;      /* count of command line options */
   int verbose = 0;       /* verbose mode */
   int new_beam_cent = 0; /* new beam center provided */
+  int new_nimages = 0;   /* new number of images provided */
   int ii;
   char* endptr;
   char* fndptr;
@@ -123,15 +127,23 @@ int main(int argc, char **argv) {
               new_beam_cent = 0;
               fprintf(stderr, "eiger2cbf error:  --beam-center provided without two comma-separated values; ignored\n");
               usage(argc, argv);
-              usage_printed  ++;
-          }
+              usage_printed  ++;         }
         }     
       } else {
         fprintf(stderr, "eiger2cbf error:  --beam-center provided without a value; ignored\n");
         usage(argc, argv);
         usage_printed  ++;
         new_beam_cent = 0;
-        
+      }
+    } else if (!strcmp(argv[ii],"--nimages")) {
+      new_nimages = 1;
+      optcount ++;
+      nnimages=strtol(argv[ii],&endptr,10);
+      if (!endptr || endptr==argv[ii]) {
+        new_nimages = 0;
+        fprintf(stderr, "eiger2cbf error: --nimages invalid value; ignored\n");
+        usage(argc,argv);
+        usage_printed++;
       }
     } else break;
   }
@@ -145,17 +157,20 @@ int main(int argc, char **argv) {
 
   hdf = H5Fopen(argv[1+optcount], H5F_ACC_RDONLY, H5P_DEFAULT);
   if (hdf < 0) {
-    fprintf(stderr, "Failed to open file %s\n", argv[1+optcount]);
+    fprintf(stderr, "eiger2cbf error: failed to open file %s\n", argv[1+optcount]);
     return -1;
   }
 
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/nimages", &nimages);
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/ntrigger", &ntrigger);
   if (nimages == 1 && ntrigger > 1) {
-    fprintf(stderr, "nimages == 1 and ntrigger == %d \n", ntrigger);
-    fprintf(stderr, "setting nimages to ntrigger \n");
+    fprintf(stderr, "eiger2cbf warning: nimages == 1 and ntrigger == %d \n", ntrigger);
+    fprintf(stderr, "eiger2cbf warning: setting nimages to ntrigger \n");
     nimages = ntrigger;
-
+  }
+  if (new_nimages && nnimages > 0) {
+    nimages = nnimages;
+    fprintf(stderr, "eiger2cbf warning: setting nimages to %d \n",nimages);
   }
   if (argc-optcount == 2) {
     if (!verbose) {
@@ -167,14 +182,14 @@ int main(int argc, char **argv) {
     return 0;
   }
   
-  ret = sscanf(argv[2+optcount], "%d:%d", &from, &to);
-  if (ret == 0) {
+  retfromto = sscanf(argv[2+optcount], "%d:%d", &from, &to);
+  if (retfromto == 0) {
     fprintf(stderr, "Failed to parse output frame number(s).");
     return -1;\
-  } else if (ret == 1) {
+  } else if (retfromto == 1) {
     to = from;
   }
-  if (to != from && argc-optcount < 4) {
+  if ((to != from || retfromto != -1) && argc-optcount < 4) {
     fprintf(stderr, "You cannot output multiple images into STDOUT.");
     return -1;
   }

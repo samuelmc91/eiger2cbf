@@ -52,49 +52,137 @@
 #                                                                    #
 ######################################################################
 
+options=""
 masterfile=$1  #path to the desired master file
-if [ "$masterfile" == "--help" ]
+if [ "$masterfile" == "--help" ] || [ ${masterfile}xx == "xx" ]
   then
-  echo "eiger2cbf_par masterfile first_frame last_frame cbfout"
+  echo "eiger2cbf_par --help                       -- print this message"
+  echo "eiger2cbf_par [options] masterfile         -- get the number of frames"
+  echo "eiger2cbf_par [options] masterfile first_frame last_frame cbfout "
   echo "  masterfile -- the master h5 file with the metadata and links to the data"
   echo "  first_frame last_frame  -- frames numbered from 1"
   echo "  cbfout -- the name of the cbf file without the frame number"
   echo "            and without the .cbf extension"
-  echo "generates parallel copies of eiger2cbf in blocks of 40 images for more"
-  echo "than 999 frames, blocks of 20 for more than 199 frames, blocks of"
-  echo "5 for more than 9 frames, and blocks of 1 otherwise" 
-  exit
-else
+  echo "  options: "
+  echo "    --beam-center beamx,beamy             -- new beam center in pixels"
+  echo "    --nimages images                      -- set the number of images to images"
+  echo "    --maxthreads mthreads                 -- limit the threads to mthreads"
+  echo "    --maxblock kimages                    -- limit the blocks to kimages"
+  echo "generates mthreads parallel copies of eiger2cbf in blocks of kimages images for more"
+  echo "than kimages*mthreads frames, blocks of kimages/2 for more than kimages*mthreads,"
+  echo "etc.  The default for kimages is 40 images per block.  The default for mthreads is 25." 
+  shift
+  masterfile=$1
+fi
 
-first_frame=$2 #first frame in the set
-last_frame=$3  #last frame in the set
+maxblock=40
+maxthreads=25
+
+#echo "test done"
+if [ "${masterfile}xx" == "xx" ]
+  then
+  exit
+fi
+
+while [ "${masterfile:0:2}"xx == "--xx" ]
+  do
+  #echo "test beamcenter"
+  if [ "${masterfile}"xx == "--beamcenterxx" ] || [ "${masterfile}"xx == "--nimagesxx" ]
+    then
+    options=${options}" "${1}" "${2}
+    shift
+    shift
+    masterfile=$1
+    continue
+  fi
+  #echo "test maxthreads"
+  if [ "${masterfile}xx" == "--maxthreadsxx" ]
+    then
+    maxthreads=$2
+    shift
+    shift
+    masterfile=$1
+    continue
+  fi
+  #echo "test maxblock"
+  if [ "${masterfile}xx" == "--maxblockxx" ]
+     then
+    maxblock=$2
+    shift
+    shift
+    masterfile=$1
+    continue
+  fi
+  break
+done
+
+echo "test done"
+if [ "${masterfile}"xx == "xx" ]
+  then
+  exit
+fi
+
+echo processing eiger2cbf $options $*        
+
+first_frame=00$2 #first frame in the set
+last_frame=00$3  #last frame in the set
+re='^[0-9]+$'
+if ! [[ $first_frame =~ $re ]] ; then
+   echo "error: first frame $2 Not an integer" >&2; exit 1
+fi
+if ! [[ $last_frame =~ $re ]] ; then
+   echo "error: last frame $3 Not an integer" >&2; exit 1
+fi
+
 cbfout=$4      #cbf file name to write without the .cbf
-#echo masterfile $masterfile
-#echo first_frame:last_frame ${first_frame}:${last_frame}
+
+if [ $first_frame -lt 1 ]
+  then
+  echo first frame $first_frame less than 1,  exit
+  exit
+fi
+
+if [ $last_frame -lt $first_frame ]
+  then
+  echo last_frame $last_frame less than first frame $first_frame, exit
+  exit
+fi
 iframe=$first_frame
 nframes=`expr $last_frame - $first_frame + 1`
-echo nframes $nframes
-block_size=40
-if [ $nframes -lt 1000 ]
-  then block_size=20
-fi
-if [ $nframes -lt 200 ]
-  then block_size=5
-fi
-if [ $nframes -lt 10 ]
-  then block_size=1
-fi
-echo block_size $block_size
+#echo nframes $nframes
 
+block_size=$maxblock
+totframes=$(( $block_size * $maxthreads ))
+#echo totframes: $totframes block_size: $block_size maxthreads: $maxthreads
+while [ "${totframes}" -gt "${nframes}" ]; do
+  block_size=$(( $block_size / 2 ))
+  #echo block_size: $block_size
+  if [ "${block_size}" -lt "3" ]; then
+    block_size=1
+    break
+  fi
+  totframes=$(( $block_size * $maxthreads ))
+  #echo totframes: $totframes block_size: $block_size maxthreads: $maxthreads
+done
+
+echo block_size: $block_size, maxthreads: $maxthreads 
+
+running=0
 while [ $iframe -le $last_frame ]; do
-  block_end=`expr $iframe + $block_size - 1`
+  block_end=$(( $iframe + $block_size - 1 ))
   if [ $block_end -gt $last_frame ]
     then block_end=$last_frame
   fi
-  eiger2cbf $masterfile $iframe:$block_end $cbfout >>/tmp/eiger2cbf_par_$$ 2>&1 &
+  #echo eiger2cbf $options $masterfile $iframe:$block_end $cbfout >>/tmp/eiger2cbf_par_$$ 2>&1 &
+  eiger2cbf $options $masterfile $iframe:$block_end $cbfout >>/tmp/eiger2cbf_par_$$ 2>&1 &
+  running=$(( $running + 1 ))
+  if [ $running -ge $maxthreads ]
+    then
+    wait
+    running=0
+  fi
   iframe=`expr $block_end + 1`
 done
 wait
 sort -u  /tmp/eiger2cbf_par_$$
 rm -rf /tmp/eiger2cbf_par_$$
-fi
