@@ -6,8 +6,8 @@ CBFLIB ?=	$(PREFIX)/lib
 CBFINC ?=	$(PREFIX)/include/cbflib
 HDF5LIB ?=	$(PREFIX)/lib
 CC 	?=	gcc
-#CFLAGS	?=	-std=c99 -g -O3
-CFLAGS  ?=      -std=c99 -g -O0
+CFLAGS	?=	-std=c99 -g -O3
+#CFLAGS  ?=      -std=c99 -g -O0
 
 all:	eiger2cbf eiger2cbf.so eiger2cbf-so-worker eiger2params
 	
