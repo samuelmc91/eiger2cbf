@@ -42,7 +42,7 @@ eiger2params:  eiger2params.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bitshuffle.c \
 	${HDF5LIB}/libhdf5_hl.a \
 	${HDF5LIB}/libhdf5.a \
-	-lm -lpthread -lz -ldl
+	-lm -lbsd -lpthread -lz -ldl
 
 eiger2cbf-so-worker:	plugin-worker.c \
 	lz4 lz4/lz4.c lz4/h5zlz4.c \

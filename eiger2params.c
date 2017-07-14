@@ -44,6 +44,9 @@ gcc -std=c99 -o eiger2params -g \
 #include "hdf5.h"
 #include "hdf5_hl.h"
 
+/*  signature for fgetln
+    note that a coy of fgetln is included in this kit, in case libbsd is not there */
+char * fgetln(FILE *stream, size_t *len);
 
 extern const H5Z_class2_t H5Z_LZ4;
 extern const H5Z_class2_t bshuf_H5Filter;
@@ -61,6 +64,7 @@ void usage( int argc, char **argv ) {
     printf("    -v or --verbose                  -- provide more detail in output\n"); 
     printf("    --beam-center beamx,beamy        -- new beam center in pixels\n");
     printf("    --nimages images                 -- override the number of images\n");
+    printf("    --exclude dozordat.dat           -- dozor data file of parameters to exclude\n");
     printf("    --dozor-dat                      -- format as a dozor data file\n");
     printf("    --dozor-cli                      -- format as dozor cli options\n");
     return;  
@@ -90,6 +94,9 @@ int main(int argc, char **argv) {
   int dozor_cli = 0;     /* flag for dozor cli options output */
   char * param_prologue="";
   char * param_epilogue="\n";
+  char * dozor_exclude=NULL;
+  char * dozor_exclude_buf=NULL;
+  FILE * dozor_exclude_stream=NULL;
   int ii;
   char* endptr;
   char* fndptr;
@@ -101,6 +108,26 @@ int main(int argc, char **argv) {
   char detector_sn[256] = {}, description[256] = {}, version[256] = {};
   char * detector;  
 
+  int ex_detector = 0;
+  int ex_exposure = 0;
+  int ex_detector_distance = 0;
+  int ex_X_ray_wavelength = 0;
+  int ex_fraction_polarization = 0;
+  int ex_pixel_min = 0;
+  int ex_pixel_max = 0;
+  int ex_ix_min = 0;
+  int ex_iy_min = 0;
+  int ex_ix_max = 0;
+  int ex_iy_max = 0;
+  int ex_orgx = 0;
+  int ex_orgy = 0;
+  int ex_oscillation_range = 0;
+  int ex_image_step = 0;
+  int ex_starting_angle = 0;
+  int ex_first_image_number = 0;
+  int ex_number_images = 0;
+  int ex_name_template_image = 0;
+
   hid_t hdf;
 
 
@@ -110,7 +137,7 @@ int main(int argc, char **argv) {
       optcount ++;
       usage_printed ++;
     } else if (!strcmp(argv[ii],"-v") || !strcmp(argv[ii],"--verbose")) {
-      fprintf(stderr, "EIGER HDF5 to PARAMETERS converter (version 170707)\n");
+      fprintf(stderr, "EIGER HDF5 to PARAMETERS converter (version 170711)\n");
       fprintf(stderr, " derived by Herbert J. Bernstein, yayahjb@gmail.com from\n");
       fprintf(stderr, "EIGER HDF5 to CBF converter (version 160929)\n");
       fprintf(stderr, " written by Takanori Nakane\n");
@@ -137,12 +164,25 @@ int main(int argc, char **argv) {
               fprintf(stderr, "eiger2cbf error:  --beam-center provided without two comma-separated values; ignored\n");
               usage(argc, argv);
               usage_printed  ++;         }
-        }     
+        }
       } else {
         fprintf(stderr, "eiger2cbf error:  --beam-center provided without a value; ignored\n");
         usage(argc, argv);
         usage_printed  ++;
         new_beam_cent = 0;
+      }
+    } else if (!strcmp(argv[ii],"--exclude")) {
+      optcount ++;
+      if (ii < argc-1) {
+        ii++;
+        optcount ++;
+        dozor_exclude =  argv[ii];
+        dozor_exclude_stream = fopen(dozor_exclude,"r");
+        if (!dozor_exclude_stream) dozor_exclude=NULL;
+      } else {
+        fprintf(stderr, "eiger2cbf error:  --exclude provided without a file name ignored\n");
+        dozor_exclude = NULL;
+        dozor_exclude_stream = NULL;
       }
     } else if (!strcmp(argv[ii],"--nimages")) {
       new_nimages = 1;
@@ -464,109 +504,134 @@ int main(int argc, char **argv) {
   fprintf(stderr, "\nFile analysis completed.\n\n");
  
   {
-    /* char header_format[] = 
-      "\n"
-      "# Detector: %s, S/N %s\n"
-      "# Pixel_size %de-6 m x %de-6 m\n"
-      "# Silicon sensor, thickness %.6f m\n"
-      "# Exposure_time %f s\n"
-      "# Exposure_period %f s\n"
-      "# Count_cutoff %d counts\n"
-      "# Wavelength %f A\n"
-      "# Detector_distance %f m\n"
-      "# Beam_xy (%.2f, %.2f) pixels\n"
-      "# Start_angle %f deg.\n"
-      "# Angle_increment %f deg.\n"; 
-
-    char header_content[4096] = {};
-    snprintf(header_content, 4096, header_format,
-	     description, detector_sn,
-	     thickness,
-	     (int)(pixelsize * 1E6), (int)(pixelsize * 1E6),
-	     count_time, frame_time, countrate_cutoff, wavelength, distance,
-	     new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy, osc_start, osc_width);
-    */
-
-
-    H5Sclose(dataspace);
-    H5Dclose(data);
 
     /////////////////////////////////////////////////////////////////
     // Reading done. Here output starts...
 
     FILE *fh = stdout;
+
+    ex_detector = 0;
+    ex_exposure = 0;
+    ex_detector_distance = 0;
+    ex_X_ray_wavelength = 0;
+    ex_fraction_polarization = 0;
+    ex_pixel_min = 0;
+    ex_pixel_max = 0;
+    ex_ix_min = 0;
+    ex_iy_min = 0;
+    ex_ix_max = 0;
+    ex_iy_max = 0;
+    ex_orgx = 0;
+    ex_orgy = 0;
+    ex_oscillation_range = 0;
+    ex_image_step = 0;
+    ex_starting_angle = 0;
+    ex_first_image_number = 0;
+    ex_number_images = 0;
+    ex_name_template_image = 0;
+
+    dozor_exclude_buf = NULL;
+    if (dozor_exclude_stream) {
+      char * cline;
+      size_t cline_len, cur_len;
+      char buf[256];
+      while (cline = fgetln(dozor_exclude_stream, &cline_len)) {
+        for (cur_len=0; cur_len<cline_len && cur_len <  255; cur_len++) {
+          buf[cur_len]=cline[cur_len];
+        }
+        buf[255] = buf[cur_len] = 0;
+        if (strcasestr(cline,"detector ") || strcasestr(cline,"detector	")) ex_detector = 1; 
+        if (strcasestr(cline,"exposure ") || strcasestr(cline,"exposure	")) ex_exposure = 1; 
+        if (strcasestr(cline,"detector_distance"))      ex_detector_distance = 1; 
+        if (strcasestr(cline,"X-ray_wavelength"))       ex_X_ray_wavelength = 1; 
+        if (strcasestr(cline,"fraction_polarization"))  ex_fraction_polarization = 1; 
+        if (strcasestr(cline,"pixel_min"))              ex_pixel_min = 1; 
+        if (strcasestr(cline,"pixel_max"))              ex_pixel_max = 1; 
+        if (strcasestr(cline,"ix_min"))                 ex_ix_min = 1; 
+        if (strcasestr(cline,"iy_min"))                 ex_iy_min = 1; 
+        if (strcasestr(cline,"iy_max"))                 ex_iy_max = 1; 
+        if (strcasestr(cline,"orgx"))                   ex_orgx = 1; 
+        if (strcasestr(cline,"orgy"))                   ex_orgy = 1; 
+        if (strcasestr(cline,"oscillation_range"))      ex_oscillation_range = 1; 
+        if (strcasestr(cline,"image_step"))             ex_image_step = 1; 
+        if (strcasestr(cline,"starting_angle"))         ex_starting_angle = 1; 
+        if (strcasestr(cline,"first_image_number"))     ex_first_image_number = 1; 
+        if (strcasestr(cline,"number_images"))          ex_number_images = 1; 
+        if (strcasestr(cline,"name_template_image"))    ex_name_template_image = 1; 
+      }
+    }
     if (dozor_dat) fprintf(stdout,"!\n");
-    fprintf(stdout,"%sdetector %s%s",param_prologue,detector,param_epilogue);
+    if (!ex_detector) fprintf(stdout,"%sdetector %s%s",param_prologue,detector,param_epilogue);
     if (count_time > 0.) {
-      fprintf(stdout,"%sexposure %f%s",param_prologue,count_time,param_epilogue);  
+      if (!ex_exposure) fprintf(stdout,"%sexposure %f%s",param_prologue,count_time,param_epilogue);
     } else if (verbose) {
-      fprintf(stdout,"%sexposure %s%s",param_prologue,"unknown_exposure",param_epilogue);  
+      if (!ex_exposure) fprintf(stdout,"%sexposure %s%s",param_prologue,"unknown_exposure",param_epilogue);
     }
     if (distance >= 0.) {
-      fprintf(stdout,"%sdetector_distance %f%s",param_prologue,distance*1.e3,param_epilogue);  
+      if (!ex_detector_distance) fprintf(stdout,"%sdetector_distance %f%s",param_prologue,distance*1.e3,param_epilogue);  
     } else if (verbose) {
-      fprintf(stdout,"%sdetector_distance %s%s",param_prologue,"unknown_distance",param_epilogue);  
+      if (!ex_detector_distance) fprintf(stdout,"%sdetector_distance %s%s",param_prologue,"unknown_distance",param_epilogue);  
     }
     if (wavelength >= 0.) {
-      fprintf(stdout,"%sX-ray_wavelength %f%s",param_prologue,wavelength,param_epilogue);  
+      if (!ex_X_ray_wavelength) fprintf(stdout,"%sX-ray_wavelength %f%s",param_prologue,wavelength,param_epilogue);  
     } else if (verbose) {
-      fprintf(stdout,"%sX-ray_wavelength %s%s",param_prologue,"unknown_wavelength",param_epilogue);  
+      if (!ex_X_ray_wavelength) fprintf(stdout,"%sX-ray_wavelength %s%s",param_prologue,"unknown_wavelength",param_epilogue);  
     }
     if (frac_polar >= 0.) {
-      fprintf(stdout,"%sfraction_polarization %f%s",param_prologue,frac_polar,param_epilogue);  
+      if (!ex_fraction_polarization) fprintf(stdout,"%sfraction_polarization %f%s",param_prologue,frac_polar,param_epilogue);  
     } else if (verbose) {
-      fprintf(stdout,"%sfraction_polarization %s%s",param_prologue,"unknown_polarization",param_epilogue);  
+      if (!ex_fraction_polarization) fprintf(stdout,"%sfraction_polarization %s%s",param_prologue,"unknown_polarization",param_epilogue);  
     }
     if (verbose) {
-      fprintf(stdout,"%spixel_min 1%s",param_prologue,param_epilogue);
+      if (!ex_pixel_min) fprintf(stdout,"%spixel_min 1%s",param_prologue,param_epilogue);
     }
     if (countrate_cutoff >= 0) {
-      fprintf(stdout,"%spixel_max %d%s",param_prologue,countrate_cutoff,param_epilogue);
+      if (!ex_pixel_max) fprintf(stdout,"%spixel_max %d%s",param_prologue,countrate_cutoff,param_epilogue);
     } else if (verbose) {
-      fprintf(stdout,"%spixel_max %s%s",param_prologue,"unknown_pixel_max",param_epilogue);
+      if (!ex_pixel_max) fprintf(stdout,"%spixel_max %s%s",param_prologue,"unknown_pixel_max",param_epilogue);
     }
 
     beamx=new_beam_cent?nbeamx:beamx;
     beamy=new_beam_cent?nbeamy:beamy;
     if (beamx > -9999999. && beamy > -9999999.) {
-      fprintf(stdout,"%six_min %f%s",param_prologue,beamx-50.,param_epilogue);
-      fprintf(stdout,"%six_max %f%s",param_prologue,beamx+50.,param_epilogue);
-      fprintf(stdout,"%siy_min %f%s",param_prologue,beamy-50.,param_epilogue);                
-      fprintf(stdout,"%siy_max %f%s",param_prologue,beamy+50.,param_epilogue);
-      fprintf(stdout,"%sorgx %f%s",param_prologue,beamx,param_epilogue);
-      fprintf(stdout,"%sorgy %f%s",param_prologue,beamy,param_epilogue);  
+      if (!ex_ix_min) fprintf(stdout,"%six_min %.0f%s",param_prologue,beamx-50.,param_epilogue);
+      if (!ex_ix_max) fprintf(stdout,"%six_max %.0f%s",param_prologue,beamx+50.,param_epilogue);
+      if (!ex_iy_min) fprintf(stdout,"%siy_min %.0f%s",param_prologue,beamy-50.,param_epilogue);
+      if (!ex_iy_max) fprintf(stdout,"%siy_max %.0f%s",param_prologue,beamy+50.,param_epilogue);
+      if (!ex_orgx) fprintf(stdout,"%sorgx %f%s",param_prologue,beamx,param_epilogue);
+      if (!ex_orgy) fprintf(stdout,"%sorgy %f%s",param_prologue,beamy,param_epilogue);
     } else if (verbose) {
-      fprintf(stdout,"%six_min %s%s",param_prologue,"unknown_ix_min",param_epilogue);                
-      fprintf(stdout,"%six_max %s%s",param_prologue,"unknown_ix_max",param_epilogue);
-      fprintf(stdout,"%siy_min %s%s",param_prologue,"unknown_iy_min",param_epilogue);
-      fprintf(stdout,"%siy_max %s%s",param_prologue,"unknown_iy_max",param_epilogue);
-      fprintf(stdout,"%sorgx %s%s",param_prologue,"unknown_orgx",param_epilogue);
-      fprintf(stdout,"%sorgy %s%s",param_prologue,"unknown_orgy",param_epilogue); 
+      if (!ex_ix_min) fprintf(stdout,"%six_min %s%s",param_prologue,"unknown_ix_min",param_epilogue);
+      if (!ex_ix_max) fprintf(stdout,"%six_max %s%s",param_prologue,"unknown_ix_max",param_epilogue);
+      if (!ex_iy_min) fprintf(stdout,"%siy_min %s%s",param_prologue,"unknown_iy_min",param_epilogue);
+      if (!ex_iy_max) fprintf(stdout,"%siy_max %s%s",param_prologue,"unknown_iy_max",param_epilogue);
+      if (!ex_orgx) fprintf(stdout,"%sorgx %s%s",param_prologue,"unknown_orgx",param_epilogue);
+      if (!ex_orgy) fprintf(stdout,"%sorgy %s%s",param_prologue,"unknown_orgy",param_epilogue); 
     }
     if (osc_width >= 0.) {
-      fprintf(stdout,"%soscillation_range %f%s",param_prologue,osc_width,param_epilogue);
+      if (!ex_oscillation_range) fprintf(stdout,"%soscillation_range %f%s",param_prologue,osc_width,param_epilogue);
     } else if (verbose) {
-      fprintf(stdout,"%soscillation_range %s%s",param_prologue,"unknown_oscillation_range",param_epilogue);
+      if (!ex_oscillation_range)fprintf(stdout,"%soscillation_range %s%s",param_prologue,"unknown_oscillation_range",param_epilogue);
     }
     if (nimages > 0 && angles[0] > -9999.) {
-      fprintf(stdout,"%simage_step %f%s",param_prologue,angles[1]-angles[0],param_epilogue);
+      if (!ex_image_step) fprintf(stdout,"%simage_step %.0f%s",param_prologue,angles[1]-angles[0],param_epilogue);
     } else if (verbose) {
-      fprintf(stdout,"%simage_step %s%s",param_prologue,"unknown_image_step",param_epilogue);
+      if (!ex_image_step) fprintf(stdout,"%simage_step %s%s",param_prologue,"unknown_image_step",param_epilogue);
     }
     if (angles[0] > -9999.) {
-      fprintf(stdout,"%sstarting_angle %f%s",param_prologue,angles[0],param_epilogue);
+      if (!ex_starting_angle) fprintf(stdout,"%sstarting_angle %f%s",param_prologue,angles[0],param_epilogue);
     } else {
-      fprintf(stdout,"%sstarting_angle %s%s",param_prologue,"unknown_starting_angle",param_epilogue);
+      if (!ex_starting_angle) fprintf(stdout,"%sstarting_angle %s%s",param_prologue,"unknown_starting_angle",param_epilogue);
     }
     if (nimages > 0) {
-      fprintf(stdout,"%sfirst_image_number %d%s",param_prologue,1,param_epilogue);
-      fprintf(stdout,"%snumber_images %d%s",param_prologue,nimages,param_epilogue);
+      if (!ex_first_image_number) fprintf(stdout,"%sfirst_image_number %d%s",param_prologue,1,param_epilogue);
+      if (!ex_number_images) fprintf(stdout,"%snumber_images %d%s",param_prologue,nimages,param_epilogue);
     } else if (verbose) {
-      fprintf(stdout,"%sfirst_image_number %s%s",param_prologue,"unknown_first_image_number",param_epilogue);
-      fprintf(stdout,"%snumber_images %s%s",param_prologue,"unknown_number_images",param_epilogue);
+      if (!ex_first_image_number) fprintf(stdout,"%sfirst_image_number %s%s",param_prologue,"unknown_first_image_number",param_epilogue);
+      if (!ex_number_images) fprintf(stdout,"%snumber_images %s%s",param_prologue,"unknown_number_images",param_epilogue);
     }
    
-    fprintf(stdout,"%sname_template_image %s%s",param_prologue,argv[1+optcount],param_epilogue);
+    if (!ex_name_template_image) fprintf(stdout,"%sname_template_image %s%s",param_prologue,argv[1+optcount],param_epilogue);
 
   }
 
