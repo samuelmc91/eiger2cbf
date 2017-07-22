@@ -45,7 +45,7 @@ gcc -std=c99 -o eiger2params -g \
 #include "hdf5_hl.h"
 
 /*  signature for fgetln
-    note that a coy of fgetln is included in this kit, in case libbsd is not there */
+    note that a copy of fgetln is included in this kit, in case libbsd is not there */
 char * fgetln(FILE *stream, size_t *len);
 
 extern const H5Z_class2_t H5Z_LZ4;
