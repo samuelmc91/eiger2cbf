@@ -491,7 +491,7 @@ int main(int argc, char **argv) {
     FILE *fh = stdout;
 
     if (argc-optcount > 3) {
-      if (from == to) {
+      if (from == to && retfromto !=2 ) {
 	fh = fopen(argv[3+optcount], "wb");
       } else {
 	char filename[4096];
