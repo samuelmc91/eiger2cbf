@@ -1,15 +1,16 @@
 #!/bin/bash
-#  eiger2cbf_par  Script to run eiger2cbf in parallel
+#  eiger2cbf_4t  Script to run eiger2cbf in 4 thread parallel
 #  (c) Copyright 2017 Herbert J. Bernstein 
 #      yayahjb@gmail.com, 12 Feb 2017
+#      derived from eiger2cbf_par, 1 Nov 2017
 #
 #  Covered by CBFlib licenses:  lgpl and gpl
 
 ######################################################################
 #                                                                    #
-# YOU MAY REDISTRIBUTE THE eiger2cbf_par UNDER THE TERMS OF THE GPL  #
+# YOU MAY REDISTRIBUTE THE eiger2cbf_4t UNDER THE TERMS OF THE GPL   #
 #                                                                    #
-# ALTERNATIVELY YOU MAY REDISTRIBUTE THE eiger2cbf_par API UNDER THE #
+# ALTERNATIVELY YOU MAY REDISTRIBUTE THE eiger2cbf_4t API UNDER THE  #
 # TERMS OF THE LGPL                                                  #
 #                                                                    #
 ######################################################################
@@ -56,9 +57,9 @@ options=""
 masterfile=$1  #path to the desired master file
 if [ "$masterfile" == "--help" ] || [ ${masterfile}xx == "xx" ]
   then
-  echo "eiger2cbf_par --help                       -- print this message"
-  echo "eiger2cbf_par [options] masterfile         -- get the number of frames"
-  echo "eiger2cbf_par [options] masterfile first_frame last_frame cbfout "
+  echo "eiger2cbf_4t --help                       -- print this message"
+  echo "eiger2cbf_4t [options] masterfile         -- get the number of frames"
+  echo "eiger2cbf_4t [options] masterfile first_frame[:last_frame] cbfout "
   echo "  masterfile -- the master h5 file with the metadata and links to the data"
   echo "  first_frame last_frame  -- frames numbered from 1"
   echo "  cbfout -- the name of the cbf file without the frame number"
@@ -66,11 +67,11 @@ if [ "$masterfile" == "--help" ] || [ ${masterfile}xx == "xx" ]
   echo "  options: "
   echo "    --beam-center beamx,beamy             -- new beam center in pixels"
   echo "    --nimages images                      -- set the number of images to images"
-  echo "    --maxthreads mthreads                 -- limit the threads to mthreads"
+  echo "    --maxthreads mthreads                 -- limit the threads to mthreads (default 4)"
   echo "    --maxblock kimages                    -- limit the blocks to kimages"
   echo "generates mthreads parallel copies of eiger2cbf in blocks of kimages images for more"
   echo "than kimages*mthreads frames, blocks of kimages/2 for more than kimages*mthreads,"
-  echo "etc.  The default for kimages is 40 images per block.  The default for mthreads is 25." 
+  echo "etc.  The default for kimages is 40 images per block.  The default for mthreads is 4." 
   shift
   masterfile=$1
 fi
@@ -116,26 +117,56 @@ while [ "${masterfile:0:2}"xx == "--xx" ]
   break
 done
 
-echo "test done"
 if [ "${masterfile}"xx == "xx" ]
   then
   exit
 fi
 
+xsubstr=".h5"
+if [[ ! "${masterfile}" == *"${xsubstr}" ]]
+then
+    echo "eiger2cbf_4t master file does not have an h5 extension"
+    exit
+fi 
+
 echo processing eiger2cbf $options $*        
 
-first_frame=00$2 #first frame in the set
-last_frame=00$3  #last frame in the set
+first_frame=$2
+last_frame=$2
+xsubstr=":"
+if [  "${first_frame##*$xsubstr}" ] ; then
+  xframes=(`echo ${first_frame} | tr ':' '  '`)
+  first_frame=00${xframes[0]}
+  last_frame=00${xframes[1]}
+  echo first_frame:last_frame ${first_frame}:${last_frame}
+else
+  if [ !  "${first_frame}xx" ==  "xx" ]
+  then
+    first_frame=00$2
+    last_frame=00$2
+  fi
+fi
+
 re='^[0-9]+$'
+if [ ! "${first_frame}xx" == "xx" ]
+then
 if ! [[ $first_frame =~ $re ]] ; then
-   echo "error: first frame $2 Not an integer" >&2; exit 1
+   echo "error: first frame $first_frame Not an integer" >&2; exit 1
 fi
+fi
+if [ ! "${last_frame}xx" == "xx" ]
+then
 if ! [[ $last_frame =~ $re ]] ; then
-   echo "error: last frame $3 Not an integer" >&2; exit 1
+   echo "error: last frame $last_frame Not an integer" >&2; exit 1
+fi
 fi
 
-cbfout=$4      #cbf file name to write without the .cbf
+cbfout=$3      #cbf file name to write without the .cbf
 
+if [  "${first_frame}xx" == "xx" ]
+then
+eiger2cbf $options $masterfile
+else
 if [ $first_frame -lt 1 ]
   then
   echo first frame $first_frame less than 1,  exit
@@ -186,3 +217,4 @@ done
 wait
 sort -u  /tmp/eiger2cbf_par_$$
 rm -rf /tmp/eiger2cbf_par_$$
+fi
