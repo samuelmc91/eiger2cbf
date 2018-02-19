@@ -1,0 +1,188 @@
+#!/bin/bash
+#  eiger2cbf_par  Script to run eiger2cbf in parallel
+#  (c) Copyright 2017 Herbert J. Bernstein 
+#      yayahjb@gmail.com, 12 Feb 2017
+#
+#  Covered by CBFlib licenses:  lgpl and gpl
+
+######################################################################
+#                                                                    #
+# YOU MAY REDISTRIBUTE THE eiger2cbf_par UNDER THE TERMS OF THE GPL  #
+#                                                                    #
+# ALTERNATIVELY YOU MAY REDISTRIBUTE THE eiger2cbf_par API UNDER THE #
+# TERMS OF THE LGPL                                                  #
+#                                                                    #
+######################################################################
+
+########################### GPL NOTICES ##############################
+#                                                                    #
+# This program is free software; you can redistribute it and/or      #
+# modify it under the terms of the GNU General Public License as     #
+# published by the Free Software Foundation; either version 2 of     #
+# (the License, or (at your option) any later version.               #
+#                                                                    #
+# This program is distributed in the hope that it will be useful,    #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of     #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the      #
+# GNU General Public License for more details.                       #
+#                                                                    #
+# You should have received a copy of the GNU General Public License  #
+# along with this program; if not, write to the Free Software        #
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA           #
+# 02111-1307  USA                                                    #
+#                                                                    #
+######################################################################
+
+######################### LGPL NOTICES ###############################
+#                                                                    #
+# This library is free software; you can redistribute it and/or      #
+# modify it under the terms of the GNU Lesser General Public         #
+# License as published by the Free Software Foundation; either       #
+# version 2.1 of the License, or (at your option) any later version. #
+#                                                                    #
+# This library is distributed in the hope that it will be useful,    #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of     #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU  #
+# Lesser General Public License for more details.                    #
+#                                                                    #
+# You should have received a copy of the GNU Lesser General Public   #
+# License along with this library; if not, write to the Free         #
+# Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,    #
+# MA  02110-1301  USA                                                #
+#                                                                    #
+######################################################################
+
+options=""
+masterfile=$1  #path to the desired master file
+if [ "$masterfile" == "--help" ] || [ ${masterfile}xx == "xx" ]
+  then
+  echo "eiger2cbf_par --help                       -- print this message"
+  echo "eiger2cbf_par [options] masterfile         -- get the number of frames"
+  echo "eiger2cbf_par [options] masterfile first_frame last_frame cbfout "
+  echo "  masterfile -- the master h5 file with the metadata and links to the data"
+  echo "  first_frame last_frame  -- frames numbered from 1"
+  echo "  cbfout -- the name of the cbf file without the frame number"
+  echo "            and without the .cbf extension"
+  echo "  options: "
+  echo "    --beam-center beamx,beamy             -- new beam center in pixels"
+  echo "    --nimages images                      -- set the number of images to images"
+  echo "    --maxthreads mthreads                 -- limit the threads to mthreads"
+  echo "    --maxblock kimages                    -- limit the blocks to kimages"
+  echo "generates mthreads parallel copies of eiger2cbf in blocks of kimages images for more"
+  echo "than kimages*mthreads frames, blocks of kimages/2 for more than kimages*mthreads,"
+  echo "etc.  The default for kimages is 40 images per block.  The default for mthreads is 25." 
+  shift
+  masterfile=$1
+fi
+
+maxblock=40
+maxthreads=4
+
+#echo "test done"
+if [ "${masterfile}xx" == "xx" ]
+  then
+  exit
+fi
+
+while [ "${masterfile:0:2}"xx == "--xx" ]
+  do
+  #echo "test beamcenter"
+  if [ "${masterfile}"xx == "--beamcenterxx" ] || [ "${masterfile}"xx == "--nimagesxx" ]
+    then
+    options=${options}" "${1}" "${2}
+    shift
+    shift
+    masterfile=$1
+    continue
+  fi
+  #echo "test maxthreads"
+  if [ "${masterfile}xx" == "--maxthreadsxx" ]
+    then
+    maxthreads=$2
+    shift
+    shift
+    masterfile=$1
+    continue
+  fi
+  #echo "test maxblock"
+  if [ "${masterfile}xx" == "--maxblockxx" ]
+     then
+    maxblock=$2
+    shift
+    shift
+    masterfile=$1
+    continue
+  fi
+  break
+done
+
+echo "test done"
+if [ "${masterfile}"xx == "xx" ]
+  then
+  exit
+fi
+
+echo processing eiger2cbf $options $*        
+
+first_frame=00$2 #first frame in the set
+last_frame=00$3  #last frame in the set
+re='^[0-9]+$'
+if ! [[ $first_frame =~ $re ]] ; then
+   echo "error: first frame $2 Not an integer" >&2; exit 1
+fi
+if ! [[ $last_frame =~ $re ]] ; then
+   echo "error: last frame $3 Not an integer" >&2; exit 1
+fi
+
+cbfout=$4      #cbf file name to write without the .cbf
+
+if [ $first_frame -lt 1 ]
+  then
+  echo first frame $first_frame less than 1,  exit
+  exit
+fi
+
+if [ $last_frame -lt $first_frame ]
+  then
+  echo last_frame $last_frame less than first frame $first_frame, exit
+  exit
+fi
+iframe=$first_frame
+nframes=`expr $last_frame - $first_frame + 1`
+#echo nframes $nframes
+
+block_size=$maxblock
+totframes=$(( $block_size * $maxthreads ))
+#echo totframes: $totframes block_size: $block_size maxthreads: $maxthreads
+while [ "${totframes}" -gt "${nframes}" ]; do
+  block_size=$(( $block_size / 2 ))
+  #echo block_size: $block_size
+  if [ "${block_size}" -lt "3" ]; then
+    block_size=1
+    break
+  fi
+  totframes=$(( $block_size * $maxthreads ))
+  #echo totframes: $totframes block_size: $block_size maxthreads: $maxthreads
+done
+
+echo block_size: $block_size, maxthreads: $maxthreads 
+
+running=0
+while [ $iframe -le $last_frame ]; do
+  block_end=$(( $iframe + $block_size - 1 ))
+  if [ $block_end -gt $last_frame ]
+    then block_end=$last_frame
+  fi
+  #echo eiger2cbf $options $masterfile $iframe:$block_end $cbfout >>/tmp/eiger2cbf_par_$$ 2>&1 &
+  eiger2cbf $options $masterfile $iframe:$block_end $cbfout >>/tmp/eiger2cbf_par_$$ 2>&1 &
+  running=$(( $running + 1 ))
+  if [ $running -ge $maxthreads ]
+    then
+    wait
+    running=0
+  fi
+  iframe=`expr $block_end + 1`
+done
+wait
+sort -u  /tmp/eiger2cbf_par_$$
+rm -rf /tmp/eiger2cbf_par_$$
