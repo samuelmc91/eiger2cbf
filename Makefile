@@ -1,13 +1,15 @@
 # This Makefile was contributed by Harry Powell (MRC-LMB)
 # Revised for NSLS-II LSBR cluster HJB, 17 Aug 16, 6 Jul 17
 
-PREFIX ?=	/usr/local/crys-local
+PREFIX ?=	/usr/local/crys-local/ccp4-7.0
 CBFLIB ?=	$(PREFIX)/lib
 CBFINC ?=	$(PREFIX)/include/cbflib
 HDF5LIB ?=	$(PREFIX)/lib
 CC 	?=	gcc
 CFLAGS	?=	-std=c99 -g -O3
 #CFLAGS  ?=      -std=c99 -g -O0
+#FGETLN  ?= 	-lbsd
+FGETLN  ?= 	fgetln.c
 
 all:	eiger2cbf eiger2cbf.so eiger2cbf-so-worker eiger2params
 	
@@ -31,7 +33,7 @@ eiger2cbf:  eiger2cbf.c lz4/lz4.c lz4/h5zlz4.c \
 eiger2params:  eiger2params.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
-	bitshuffle/bitshuffle.c 
+	bitshuffle/bitshuffle.c fgetln.c 
 	${CC} ${CFLAGS} -o eiger2params \
 	-I${CBFINC} \
 	eiger2params.c \
@@ -42,7 +44,7 @@ eiger2params:  eiger2params.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bitshuffle.c \
 	${HDF5LIB}/libhdf5_hl.a \
 	${HDF5LIB}/libhdf5.a \
-	-lm -lbsd -lpthread -lz -ldl
+	-lm $(FGETLN) -lpthread -lz -ldl
 
 eiger2cbf-so-worker:	plugin-worker.c \
 	lz4 lz4/lz4.c lz4/h5zlz4.c \

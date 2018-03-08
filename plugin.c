@@ -52,8 +52,11 @@ TODO:
 
 #define INVALID -9999
 
-#define MAXCHILD 256
-#define DEFAULT_NCHILD 16
+#define MAXCHILD 16
+#define DEFAULT_NCHILD 4
+
+void emergency_close( void );
+int did_close=1;
 
 extern const H5Z_class2_t H5Z_LZ4;
 extern const H5Z_class2_t bshuf_H5Filter;
@@ -118,7 +121,7 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
     return;
   }
 
-  /* Decide the number of child */
+  /* Decide the number of children */
   char *env_nchild = getenv("PLUGIN_NCHILD"); // Do not free!
   if (env_nchild == NULL) {
     GLOBAL_DATA->nchild = DEFAULT_NCHILD;
@@ -198,6 +201,9 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
       close(GLOBAL_DATA->ptoc_pipes[i][0]);
     }
   }
+
+  did_close = 0;
+  atexit(emergency_close);
 
   *error_flag = 0;
   return;
@@ -335,7 +341,7 @@ void plugin_get_data(int *frame_number, int *nx, int *ny,
 
   int child_id = *frame_number % GLOBAL_DATA->nchild;
   pthread_mutex_lock(&GLOBAL_DATA->locks[child_id]);
-  fprintf(stderr, "PLUGIN PARENT: get_data for frame #%d delegated to child #%d.\n", *frame_number, child_id);
+  // fprintf(stderr, "PLUGIN PARENT: get_data for frame #%d delegated to child #%d.\n", *frame_number, child_id);
   if (write(GLOBAL_DATA->ptoc_pipes[child_id][1], frame_number, sizeof(int)) < 0) {
     fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for frame #%d.\n", child_id, *frame_number);
     *error_flag = -1;
@@ -348,7 +354,7 @@ void plugin_get_data(int *frame_number, int *nx, int *ny,
     *error_flag = -1;
     return;
   }
-//  fprintf(stderr, "PLUGIN PARENT: received %d for frame #%d from child #%d.\n", retval, *frame_number, child_id);
+  // fprintf(stderr, "PLUGIN PARENT: received %d for frame #%d from child #%d.\n", retval, *frame_number, child_id);
   if (retval == 0) {
     memcpy(data_array, GLOBAL_DATA->mapped_bufs[child_id], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
   }
@@ -362,11 +368,21 @@ void plugin_close(int *error_flag){
   printf("PLUGIN PARENT: plugin_close called.\n");
 
   for (int i = 0; i < GLOBAL_DATA->nchild; i++) {
+    pthread_mutex_lock(&GLOBAL_DATA->locks[i]);
+    // fprintf(stderr, "PLUGIN PARENT: undelegate to child #%d.\n", i);
     int val = INVALID;
     if (write(GLOBAL_DATA->ptoc_pipes[i][1], &val, sizeof(int)) < 0) {
       fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for exit.\n", i);
     }
+    pthread_mutex_unlock(&GLOBAL_DATA->locks[i]);
     munmap(GLOBAL_DATA->mapped_bufs[i], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
     shm_unlink(GLOBAL_DATA->shm_names[i]);
   }
+  did_close=1;
 }
+
+void emergency_close( void ){
+    int error_flag;
+    if (!did_close) plugin_close(&error_flag);
+}
+    

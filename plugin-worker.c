@@ -365,14 +365,14 @@ int main(int argc, char **argv) {
     if (frame_num == INVALID) break;
 
     /* do the work */
-//    fprintf(stderr, "PLUGIN CHILD %d: got request for frame #%d.\n", myid, frame_num);
+    // fprintf(stderr, "PLUGIN CHILD %d: got request for frame #%d.\n", myid, frame_num);
     int retval = get_data(myid, frame_num, GLOBAL_DATA->mapped_buf);
 
     /* send back the result */
     if (write(1, &retval, sizeof(int)) < 0) {
       fprintf(stderr, "PLUGIN CHILD %d ERROR: cannot write to parent.\n", myid);
     }
-//    fprintf(stderr, "PLUGIN CHILD %d: processed frame #%d with retval %d.\n", myid, frame_num, retval);
+    // fprintf(stderr, "PLUGIN CHILD %d: processed frame #%d with retval %d.\n", myid, frame_num, retval);
   }
 
   munmap(GLOBAL_DATA->mapped_buf, sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
