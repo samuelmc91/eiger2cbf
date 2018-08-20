@@ -42,6 +42,7 @@ gcc -std=c99 -o xsplambda2cbf -g \
 
 #include "cbf.h"
 #include "cbf_simple.h"
+#include "cbf_string.h"
 #include "hdf5.h"
 #include "hdf5_hl.h"
 
@@ -65,11 +66,12 @@ void usage( int argc, char **argv ) {
     printf("    -v or --verbose                  -- provide more detail in output\n"); 
     printf("    --beam-center beamx,beamy        -- new beam center in pixels\n");
     printf("    --wavelength wavelen             -- new wavelength in Angstroms\n");
+    printf("    --distance dist                  -- new distance in mm\n");
+    printf("    --osc-start ang                  -- new start angle for frame 1 in degrees\n");
+    printf("    --osc-width wid                  -- new oscillation angle for each frame in degrees\n");
     printf("    --nimages images                 -- override the number of images\n");
     return;  
 }
-
-
 
 
 int main(int argc, char **argv) {
@@ -95,7 +97,7 @@ int main(int argc, char **argv) {
   char* fndptr;
   double pixelsize = -1., wavelength = -1., distance = -1., count_time = -1., 
     frame_time = -1., osc_width = -1., osc_start = -9999., thickness = -1.;
-  double new_wavelength = -1.;
+  double new_wavelength = -1., new_distance = -1., new_osc_width = .1, new_osc_start = -9999. ;
   char detector_sn[4096] = {}, description[4096] = {}, version[4096] = {};
 
   hid_t hdf;
@@ -111,10 +113,10 @@ int main(int argc, char **argv) {
       usage (argc, argv);
       optcount ++;
       usage_printed ++;
-    } else if (!strcmp(argv[ii],"-v") || !strcmp(argv[ii],"--verbose")) {
+    } else if (!cbf_cistrcmp(argv[ii],"-v") || !cbf_cistrcmp(argv[ii],"--verbose")) {
       verbose = 1;
       optcount ++;
-    } else if (!strcmp(argv[ii],"--beam-center")) {
+    } else if (!cbf_cistrcmp(argv[ii],"--beam-center") || !cbf_cistrcmp(argv[ii],"--beam_center") ) {
       new_beam_cent = 1;
       optcount ++;
       if (ii  < argc-1) {
@@ -141,26 +143,91 @@ int main(int argc, char **argv) {
         usage_printed  ++;
         new_beam_cent = 0;
       }
-    } else if (!strcmp(argv[ii],"--nimages")) {
+    } else if (!cbf_cistrcmp(argv[ii],"--nimages")) {
       new_nimages = 1;
       optcount ++;
-      nnimages=strtol(argv[ii],&endptr,10);
-      if (!endptr || endptr==argv[ii]) {
-        new_nimages = 0;
-        fprintf(stderr, "xsplambda2cbf error: --nimages invalid value; ignored\n");
-        usage(argc,argv);
-        usage_printed++;
-      }
-    } else if (!strcmp(argv[ii],"--wavelength")) {
+      if (ii < argc-1) {
+        ii++; optcount++;
+        nnimages=strtol(argv[ii],&endptr,10);
+        if (!endptr || endptr==argv[ii]) {
+          new_nimages = 0;
+          fprintf(stderr, "xsplambda2cbf error: --nimages invalid value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+        }
+      } else {
+        fprintf(stderr, "xsplambda2cbf error: --nimages no value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+      }  
+    } else if (!cbf_cistrcmp(argv[ii],"--wavelength")) {
       new_wavelength = -1.;
       optcount ++;
-      new_wavelength=strtod(argv[ii],&endptr);
-      if (!endptr || endptr==argv[ii]) {
-        new_wavelength = -1.;
-        fprintf(stderr, "xsplambda2cbf error: --wavelength invalid value; ignored\n");
-        usage(argc,argv);
-        usage_printed++;
-      }
+      if (ii < argc-1) {
+        ii++; optcount++;
+        new_wavelength=strtod(argv[ii],&endptr);
+        if (!endptr || endptr==argv[ii]) {
+          new_wavelength = -1.;
+          fprintf(stderr, "xsplambda2cbf error: --wavelength invalid value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+        }
+      } else {
+        fprintf(stderr, "xsplambda2cbf error: --wavelength no value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+      }  
+    } else if (!cbf_cistrcmp(argv[ii],"--distance")) {
+      new_distance = -1.;
+      optcount ++;
+      if (ii < argc-1) {
+        ii++;  optcount++;
+        new_distance=strtod(argv[ii],&endptr);
+        if (!endptr || endptr==argv[ii]) {
+          new_distance = -1.;
+          fprintf(stderr, "xsplambda2cbf error: --distance invalid value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+        }
+      } else {
+        fprintf(stderr, "xsplambda2cbf error: --distance no value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+      }  
+    } else if (!cbf_cistrcmp(argv[ii],"--osc_width") || !cbf_cistrcmp(argv[ii],"--osc-width")) {
+      new_osc_width = -1.;
+      optcount ++;
+      if (ii < argc-1) {
+        ii++;  optcount++;
+        new_osc_width=strtod(argv[ii],&endptr);
+        if (!endptr || endptr==argv[ii]) {
+          new_osc_width = -1.;
+          fprintf(stderr, "xsplambda2cbf error: --osc_width invalid value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+        }
+      } else {
+        fprintf(stderr, "xsplambda2cbf error: --osc_width no value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+      }  
+    } else if (!cbf_cistrcmp(argv[ii],"--osc_start") || !cbf_cistrcmp(argv[ii],"--osc-start") ) {
+      new_osc_start = -9999.;
+      optcount ++;
+      if (ii < argc-1) {
+        ii++; optcount++;
+        new_osc_start=strtod(argv[ii],&endptr);
+        if (!endptr || endptr==argv[ii]) {
+          new_osc_start = -9999.;
+          fprintf(stderr, "xsplambda2cbf error: --osc_start invalid value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+        }
+      } else {
+        fprintf(stderr, "xsplambda2cbf error: --osc_start no value; ignored\n");
+          usage(argc,argv);
+          usage_printed++;
+      }  
     } else break;
   }
 
@@ -219,13 +286,11 @@ int main(int argc, char **argv) {
   H5Eset_auto(0, NULL, NULL); // Comment out this line for debugging.
 
   fprintf(stderr, "Metadata in HDF5:\n");
-  if ( H5LTread_dataset_char(hdf, "/entry/instrument/detector/description", description) >= 0) {
-  fprintf(stderr, " /entry/instrument/detector/description = %s\n", description);
-  }
-  if ( H5LTread_dataset_char(hdf, "/entry/instrument/detector/detector_number", detector_sn) >= 0 ) {
+
+  if ( H5LTread_dataset_string(hdf, "/entry/instrument/detector/detector_number", detector_sn) >= 0 ) {
   fprintf(stderr, " /entry/instrument/detector/detector_number = %s\n", detector_sn);
   }
-  if ( H5LTread_dataset_char(hdf, "/entry/instrument/detector/detectorSpecific/software_version", version) >= 0 ) {
+  if ( H5LTread_dataset_string(hdf, "/entry/instrument/detector/detectorSpecific/software_version", version) >= 0 ) {
   fprintf(stderr, " /entry/instrument/detector/detectorSpecific/software_version = %s\n", version);
   }
   if ( H5LTread_dataset_int(hdf, "/entry/instrument/detector/collection/frame_depth", &depth) >= 0 
@@ -239,12 +304,10 @@ int main(int argc, char **argv) {
   unsigned int error_val = (unsigned int)(((unsigned long long)1 << depth) - 1);
 
   // Saturation value
-  // Firmware >= 1.5
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/saturation_value", &countrate_cutoff);
   if (countrate_cutoff > 0) {
     fprintf(stderr, " /entry/instrument/detector/detectorSpecific/saturation_value = %d\n", countrate_cutoff);
   } else {
-    // Firmware >= 1.4
     fprintf(stderr, "  /entry/instrument/detector/detectorSpecific/saturation_value not present. Trying another place.\n");
     H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/countrate_correction_count_cutoff", &countrate_cutoff);
     if (countrate_cutoff > 0) {
@@ -295,8 +358,6 @@ int main(int argc, char **argv) {
       fprintf(stderr, " /entry/instrument/detector/collection/frame{width,height} = (%d, %d) (px)\n",
           xpixels, ypixels);
   }
-  fprintf(stderr, " /entry/instrument/detector/detectorSpecific/{x,y}_pixels_in_detector = (%d, %d) (px)\n",
-	  xpixels, ypixels);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/beam_center_x", &beamx);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/beam_center_y", &beamy);
   fprintf(stderr, " /entry/instrument/detector/beam_center_{x,y} = (%.2f, %.2f) (px)\n", new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy);
@@ -304,14 +365,15 @@ int main(int argc, char **argv) {
   fprintf(stderr, " /entry/instrument/detector/count_time = %f (sec)\n", count_time);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/frame_time", &frame_time); // in 
   fprintf(stderr, " /entry/instrument/detector/frame_time = %f (sec)\n", frame_time);
-  H5LTread_dataset_double(hdf, "/entry/instrument/detector/x_pixel_size", &pixelsize); // in 
-  fprintf(stderr, " /entry/instrument/detector/x_pixel_size = %f (m)\n", pixelsize);
+  if (H5LTread_dataset_double(hdf, "/entry/instrument/detector/x_pixel_size", &pixelsize)> 0)
+  fprintf(stderr, " /entry/instrument/detector/x_pixel_size = %f (um)\n", pixelsize);
 
   // Detector distance
 
-  H5LTread_dataset_double(hdf, "/entry/instrument/detector/distance", &distance); // Firmware >= 1.7
-  if (distance > 0) {
-    fprintf(stderr, " /entry/instrument/detector/distance = %f (m)\n", distance);
+  H5LTread_dataset_double(hdf, "/entry/instrument/detector/distance", &distance);
+  if (new_distance  > 0.) distance = new_distance; 
+  if (distance > 0.) {
+    fprintf(stderr, " /entry/instrument/detector/distance = %f (mm)\n", distance);
   } else {
     fprintf(stderr, "  /entry/instrument/detector/distance not present. Trying another place.\n");
 
@@ -355,16 +417,17 @@ int main(int argc, char **argv) {
       }
     }
   }
-  if (wavelength < 0) {
+  if (wavelength < 0.) {
     fprintf(stderr, " WARNING: wavelength was not defined! \"Wavelength\" field in the output is set to -1.\n");
   }
 
-  H5LTread_dataset_double(hdf, "/entry/sample/goniometer/omega_range_average", &osc_width);
-  if (osc_width > 0) {
+  if (H5LTread_dataset_double(hdf, "/entry/sample/goniometer/omega_range_average", &osc_width)< 0) osc_width = -1.;
+  if (new_osc_width > 0.) osc_width=new_osc_width;
+  if (osc_width > 0.) {
     fprintf(stderr, " /entry/sample/goniometer/omega_range_average = %f (deg)\n", osc_width);
   } else {
     fprintf(stderr, " WARNING: oscillation width was not defined. \"Start_angle\" field in the output is set to 0!\n");
-    osc_width = 0;
+    osc_width = 0.;
   }
   unsigned int *buf = (unsigned int*)malloc(sizeof(unsigned int) * xpixels * ypixels);
   signed int *buf_signed = (signed int*)malloc(sizeof(signed int) * xpixels * ypixels);
@@ -382,8 +445,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "failed to allocate buffer for omega.\n");
     return -1;
   }
-  angles[0] = -9999;
+  for (ii=0; ii < bufsize; ii++) angles[ii]=-9999.;
   H5LTread_dataset_double(hdf, "/entry/sample/goniometer/omega", angles);
+  if (new_osc_start > -9999.) osc_start = angles[0] = new_osc_start;
   fprintf(stderr, "\n");
 
   hid_t entry, group;
@@ -451,12 +515,16 @@ int main(int argc, char **argv) {
   int frame;
   for (frame = from; frame <= to; frame++) {
     fprintf(stderr, "Converting frame %d (%d / %d)\n", frame, frame - from + 1, to - from + 1);
-    if (angles[0] != -9999) {
+    if (angles[frame-1] != -9999.) {
       osc_start = angles[frame - 1];
       fprintf(stderr, " /entry/sample/goniometer/omega[%d] = %.3f (1-indexed)\n", frame, osc_start);
     } else {
-      fprintf(stderr, " oscillation start not defined. \"Start_angle\" field in the output is set to 0!\n");
-      osc_start = osc_width * frame; // old firmware
+      if (new_osc_start != -9999.) {
+          osc_start = new_osc_start+osc_width * frame;
+      } else {
+          fprintf(stderr, " oscillation start not defined. \"Start_angle\" field in the output is set to 0!\n");
+          osc_start = osc_width * frame;
+      }
     }
 
     if (frame > nimages) {
@@ -468,10 +536,10 @@ int main(int argc, char **argv) {
     char header_format[] = 
       "\n"
       "# Detector: %s, S/N %s\n"
-      "# Pixel_size %de-6 m x %de-6 m\n"
+      "# Pixel_size %d um x %d um\n"
       "# Silicon sensor, thickness %.6f um\n"
-      "# Exposure_time %f s\n"
-      "# Exposure_period %f s\n"
+      "# Exposure_time %f ms\n"
+      "# Exposure_period %f ms\n"
       "# Count_cutoff %d counts\n"
       "# Wavelength %f A\n"
       "# Detector_distance %f m\n"
@@ -483,7 +551,7 @@ int main(int argc, char **argv) {
     snprintf(header_content, 4096, header_format,
 	     description, detector_sn,
 	     thickness,
-	     (int)(pixelsize * 1E6), (int)(pixelsize * 1E6),
+	     (int)(pixelsize), (int)(pixelsize),
 	     count_time, frame_time, countrate_cutoff, wavelength, distance,
 	     new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy, osc_start, osc_width);
 
