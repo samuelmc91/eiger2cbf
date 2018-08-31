@@ -98,7 +98,10 @@ int main(int argc, char **argv) {
   double pixelsize = -1., wavelength = -1., distance = -1., count_time = -1., 
     frame_time = -1., osc_width = -1., osc_start = -9999., thickness = -1.;
   double new_wavelength = -1., new_distance = -1., new_osc_width = .1, new_osc_start = -9999. ;
-  char detector_sn[4096] = {}, description[4096] = {}, version[4096] = {};
+  char detector_sn[4096] = {},  version[4096] = {};
+  char* description;
+
+  description="LAMBDA";
 
   hid_t hdf;
 
@@ -289,6 +292,9 @@ int main(int argc, char **argv) {
 
   if ( H5LTread_dataset_string(hdf, "/entry/instrument/detector/detector_number", detector_sn) >= 0 ) {
   fprintf(stderr, " /entry/instrument/detector/detector_number = %s\n", detector_sn);
+  } else {
+    detector_sn[0]='0';
+    detector_sn[1]='\0';
   }
   if ( H5LTread_dataset_string(hdf, "/entry/instrument/detector/detectorSpecific/software_version", version) >= 0 ) {
   fprintf(stderr, " /entry/instrument/detector/detectorSpecific/software_version = %s\n", version);
@@ -331,19 +337,19 @@ int main(int argc, char **argv) {
     }
   }
 
-  H5LTread_dataset_double(hdf, "/entry/instrument/detector/sensor_thickness", &thickness); // in um 
+  H5LTread_dataset_double(hdf, "/entry/instrument/detector/sensor_thickness", &thickness); // in um
   if (thickness > 0) {
     if (thickness < .001) {
-        fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (um)\n", thickness * 1E6);
+        fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (mm)\n", thickness * 1E3);
     } else if (thickness < 1.) {
-        fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (um)\n", thickness * 1E3);
+        fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (mm)\n", thickness);
         thickness *= 1.e-3;
     } else {
-       fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (um)\n", thickness);
+       fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (mm)\n", thickness *1.E-3);
     } 
   } else {
     thickness = 450E-6;
-    fprintf(stderr, " /entry/instrument/detector/sensor_thickness is not avaialble. We assume it is %f um\n", thickness * 1E6);
+    fprintf(stderr, " /entry/instrument/detector/sensor_thickness is not avaialble. We assume it is %f mm\n", thickness * 1E3);
   }
   xpixels = -1;
   ypixels = -1;
@@ -358,6 +364,20 @@ int main(int argc, char **argv) {
       fprintf(stderr, " /entry/instrument/detector/collection/frame{width,height} = (%d, %d) (px)\n",
           xpixels, ypixels);
   }
+
+  if ( xpixels >= 248 && xpixels <= 264 
+       && ypixels >= 248 && ypixels <= 264) description = "LAMBDA-60K";
+  if ( xpixels >= 504 && xpixels <= 520
+       && ypixels <= 504 && ypixels <= 520 ) description = "LAMBDA-250K";
+  if ( xpixels >= 504 && xpixels <= 520
+       && ypixels >= 756 && ypixels <= 772 ) description = "LAMBDA-350KP";
+  if ( ypixels >= 504 && ypixels <= 520
+       && xpixels >= 756 && xpixels <= 772 ) description = "LAMBDA-350KL";
+  if ( xpixels == 512
+       && ( ypixels == 1536 || ypixels == 1528 ) ) description = "LAMBDA-750K";
+  if ( xpixels == 1536
+       && ( ypixels == 1536 || ypixels == 1528 ) ) description = "LAMBDA-2M";
+
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/beam_center_x", &beamx);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/beam_center_y", &beamy);
   fprintf(stderr, " /entry/instrument/detector/beam_center_{x,y} = (%.2f, %.2f) (px)\n", new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy);
@@ -536,8 +556,8 @@ int main(int argc, char **argv) {
     char header_format[] = 
       "\n"
       "# Detector: %s, S/N %s\n"
-      "# Pixel_size %d um x %d um\n"
-      "# Silicon sensor, thickness %.6f um\n"
+      "# Pixel_size %.6f m x %.6f m\n"
+      "# Silicon sensor, thickness %.6f m\n"
       "# Exposure_time %f ms\n"
       "# Exposure_period %f ms\n"
       "# Count_cutoff %d counts\n"
@@ -548,10 +568,11 @@ int main(int argc, char **argv) {
       "# Angle_increment %f deg.\n";
 
     char header_content[4096] = {};
+    if (frame_time < count_time) frame_time = count_time;
     snprintf(header_content, 4096, header_format,
 	     description, detector_sn,
-	     thickness,
-	     (int)(pixelsize), (int)(pixelsize),
+	     pixelsize*1.e-6, pixelsize*1.e-6,
+	     thickness*1.e-6,
 	     count_time, frame_time, countrate_cutoff, wavelength, distance,
 	     new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy, osc_start, osc_width);
 
