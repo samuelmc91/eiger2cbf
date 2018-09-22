@@ -54,6 +54,12 @@
 ######################################################################
 
 options=""
+full_path="$(cd "${0%/*}" 2>/dev/null; echo "$PWD"/"${0##*/}")"
+export EIGER2CBF_ROOT=`dirname "$full_path"`
+echo "Running in $EIGER2CBF_ROOT" 
+export PATH=$EIGER2CBF_ROOT:$PATH
+
+
 masterfile=$1  #path to the desired master file
 if [ "$masterfile" == "--help" ] || [ ${masterfile}xx == "xx" ]
   then
@@ -136,14 +142,23 @@ last_frame=$2
 xsubstr=":"
 if [  "${first_frame##*$xsubstr}" ] ; then
   xframes=(`echo ${first_frame} | tr ':' '  '`)
-  first_frame=00${xframes[0]}
-  last_frame=00${xframes[1]}
+  if [ "${xframes[0]}xx" == "xx" ]; then
+      first_frame="0"
+  else
+      first_frame="${xframes[0]}"
+  fi
+  if [ "${xframes[1]}xx" == "xx" ]; then
+      last_frame="0"
+  else
+      last_frame="${xframes[1]}"
+  fi
+
   echo first_frame:last_frame ${first_frame}:${last_frame}
 else
   if [ !  "${first_frame}xx" ==  "xx" ]
   then
-    first_frame=00$2
-    last_frame=00$2
+    first_frame=1
+    last_frame=1
   fi
 fi
 

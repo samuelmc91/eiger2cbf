@@ -53,6 +53,11 @@
 ######################################################################
 
 options=""
+full_path="$(cd "${0%/*}" 2>/dev/null; echo "$PWD"/"${0##*/}")"
+export EIGER2CBF_ROOT=`dirname "$full_path"`
+echo "Running in $EIGER2CBF_ROOT" 
+export PATH=$EIGER2CBF_ROOT:$PATH
+
 masterfile=$1  #path to the desired master file
 if [ "$masterfile" == "--help" ] || [ ${masterfile}xx == "xx" ]
   then
@@ -124,8 +129,17 @@ fi
 
 echo processing eiger2cbf $options $*        
 
-first_frame=00$2 #first frame in the set
-last_frame=00$3  #last frame in the set
+if [ "${2}xx" == "xx" ]; then
+    first_frame="1"
+else
+    first_frame="$2"
+fi
+if [ "${3}xx" == "xx" ]; then
+    last_frame="1"
+else
+    last_frame="$3"
+fi
+
 re='^[0-9]+$'
 if ! [[ $first_frame =~ $re ]] ; then
    echo "error: first frame $2 Not an integer" >&2; exit 1
