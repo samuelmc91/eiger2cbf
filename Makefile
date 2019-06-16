@@ -26,9 +26,9 @@ eiger2cbf:  eiger2cbf.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c \
-	${CBFLIB}/libcbf.a \
-	${HDF5LIB}/libhdf5_hl.a \
-	${HDF5LIB}/libhdf5.a \
+	${CBFLIB}/libcbf.so \
+	${HDF5LIB}/libhdf5_hl.so \
+	${HDF5LIB}/libhdf5.so \
 	-lm -lpthread -lz -ldl
 
 eiger2params:  eiger2params.c lz4/lz4.c lz4/h5zlz4.c \
@@ -43,8 +43,8 @@ eiger2params:  eiger2params.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c \
-	${HDF5LIB}/libhdf5_hl.a \
-	${HDF5LIB}/libhdf5.a \
+	${HDF5LIB}/libhdf5_hl.so \
+	${HDF5LIB}/libhdf5.so \
 	-lm $(FGETLN) -lpthread -lz -ldl
 
 eiger2cbf-so-worker:	plugin-worker.c \
@@ -59,6 +59,9 @@ eiger2cbf-so-worker:	plugin-worker.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c \
+	${CBFLIB}/libcbf.so \
+	${HDF5LIB}/libhdf5_hl.so \
+	${HDF5LIB}/libhdf5.so \
 	-L${HDF5LIB} -lpthread -lhdf5_hl -lhdf5 -lrt
 
 eiger2cbf.so:	plugin.c \
@@ -73,6 +76,9 @@ eiger2cbf.so:	plugin.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c \
+	${CBFLIB}/libcbf.so \
+	${HDF5LIB}/libhdf5_hl.so \
+	${HDF5LIB}/libhdf5.so \
 	-L${HDF5LIB} -lpthread -lhdf5_hl -lhdf5 -lrt
 
 xsplambda2cbf:  xsplambda2cbf.c lz4/lz4.c lz4/h5zlz4.c \
@@ -87,9 +93,9 @@ xsplambda2cbf:  xsplambda2cbf.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bshuf_h5filter.c \
 	bitshuffle/bshuf_h5plugin.c \
 	bitshuffle/bitshuffle.c \
-	${CBFLIB}/libcbf.a \
-	${HDF5LIB}/libhdf5_hl.a \
-	${HDF5LIB}/libhdf5.a \
+	${CBFLIB}/libcbf.so \
+	${HDF5LIB}/libhdf5_hl.so \
+	${HDF5LIB}/libhdf5.so \
 	-lm -lpthread -lz -ldl
 	
 
@@ -113,6 +119,7 @@ install: all $(PREFIX)/bin $(PREFIX)/lib \
 	cp eiger2cbf-so-worker $(PREFIX)/bin/eiger2cbf-so-worker
 	chmod 755 $(PREFIX)/bin/eiger2cbf-so-worker
 	cp eiger2cbf.so $(PREFIX)/lib/eiger2cbf.so
+	cp eiger2cbf.so $(PREFIX)/bin/eiger2cbf.so
 	cp xsplambda2cbf $(PREFIX)/bin/xsplambda2cbf
 	chmod 755 $(PREFIX)/bin/xsplambda2cbf
 

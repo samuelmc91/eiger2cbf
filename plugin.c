@@ -28,8 +28,11 @@ TODO:
 
 */
 
+#define _GNU_SOURCE 
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <string.h>
 #include <pthread.h>
 
@@ -39,12 +42,15 @@ TODO:
 #endif
 
 #include <unistd.h>
+#include <signal.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <signal.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <H5Ppublic.h>
 #include "H5api_adpt.h"
 #include "hdf5_hl.h"
@@ -65,6 +71,17 @@ void register_filters() {
   H5Zregister(&bshuf_H5Filter);
 }
 
+typedef struct _ShmTransferBuffer {
+    volatile int ptoc_flag_snd;  /* only modify from parent, and only after putting data in ptoc_data */
+    volatile int ptoc_flag_rcv;  /* only modify from child,  and only after processing incoming ptoc_data */
+    volatile int ptoc_data;      /* only modify from parent, and only when ptoc_flag_snd==ptoc_flag_rcv */
+    volatile pid_t ppid;         /* parent process pid, returned by getpid in the parent */
+    volatile int ctop_flag_snd;  /* only modify ftom child,  and only after putting data in ctop_data */
+    volatile int ctop_flag_rcv;  /* only modify from parent, and only after processing incoming ctop_data */
+    volatile int ctop_data;      /* only modify from child,  and only when ctop_flag_snd==ctop_flag_rcv */
+    volatile pid_t cpid;         /* child process pid, returned by fork in the parent and getpid in the child */
+} ShmTransferBuffer;
+
 struct GlobalData {
   char filename[300];
   char shm_names[MAXCHILD][NAME_MAX];
@@ -79,11 +96,12 @@ struct GlobalData {
   unsigned int error_val;
   int nchild;
   pthread_mutex_t locks[MAXCHILD];
+  ShmTransferBuffer* mapped_transfer_bufs[MAXCHILD];
   unsigned int *mapped_bufs[MAXCHILD];
-  int ctop_pipes[MAXCHILD][2]; 
-  int ptoc_pipes[MAXCHILD][2];
 };
 struct GlobalData *GLOBAL_DATA = NULL;
+
+static void sigcont_handler (int signal, siginfo_t *siginfo, void * context) {}
 
 void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy,
                        int *number_of_frames, int info[1024],
@@ -91,12 +109,24 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy,
 void child_loop(int myid);
 
 void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
+  struct sigaction action;
+  char fn[4096];
+  int n;
   register_filters();
 
-  /* patch bug in the latest BUILT */
-  char fn[4096];
-  strcpy(fn, filename);
-  int n = strlen(fn);
+  memset (&action, '\0', sizeof(action));
+  action.sa_sigaction=&sigcont_handler;
+  action.sa_flags = SA_SIGINFO;
+  if (sigaction(SIGCONT, &action, NULL) < 0) {   
+    fprintf(stderr,"sigaction failed\n");
+    *error_flag = -1;
+    return;
+  }
+
+
+
+  for(n=0;n<4096 && filename[n] != '\0';n++) {fn[n]=filename[n];}
+  fn[4095]='\0';
   fn[n - 9] = 'm';
   fn[n - 8] = 'a';
   fn[n - 7] = 's';
@@ -141,19 +171,12 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
   /* Setup and start child processes */
   int ppid = getpid();
   char child_id[16];
+  char maxchild_str[16];
 
   for (int i = 0; i < GLOBAL_DATA->nchild; i++) {
     snprintf(child_id, 16, "%d", i);
+    snprintf(maxchild_str, 16, "%d", MAXCHILD);
     pthread_mutex_init(&GLOBAL_DATA->locks[i], NULL);
-
-    /* setup bi-directional pipes to child process */
-    int pipe1 = pipe(&GLOBAL_DATA->ctop_pipes[i][0]);
-    int pipe2 = pipe(&GLOBAL_DATA->ptoc_pipes[i][0]);
-    if (pipe1 < 0 || pipe2 < 0) {
-      fprintf(stderr, "PLUGIN ERROR: Failed to create pipes for child %d.\n", i);
-      *error_flag = -2;
-      return;
-    }
 
     /* allocate shared memory and setup memory mapping */
     snprintf(GLOBAL_DATA->shm_names[i], NAME_MAX, "/plugin%d_%d.shm", ppid, i);
@@ -163,13 +186,18 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
       *error_flag = -2;
       return;
     }
-    if (ftruncate(shm_fd, sizeof(unsigned int) * nx * ny) < 0) {
+    if (ftruncate(shm_fd, sizeof(unsigned int) * nx * ny + sizeof(ShmTransferBuffer)) < 0) {
       fprintf(stderr, "PLUGIN ERROR: failed to set the size of shared memory %s.\n", GLOBAL_DATA->shm_names[i]);
       *error_flag = -2;
       return;
     }
-    GLOBAL_DATA->mapped_bufs[i] = mmap(0, sizeof(unsigned int) * nx * ny, 
+    GLOBAL_DATA->mapped_transfer_bufs[i]=(ShmTransferBuffer *)mmap(0, (sizeof(unsigned int) * nx * ny + sizeof(ShmTransferBuffer)), 
                                           PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    GLOBAL_DATA->mapped_transfer_bufs[i]->ptoc_flag_snd=0;
+    GLOBAL_DATA->mapped_transfer_bufs[i]->ptoc_flag_rcv=0;
+    GLOBAL_DATA->mapped_transfer_bufs[i]->ctop_flag_snd=0;
+    GLOBAL_DATA->mapped_transfer_bufs[i]->ctop_flag_rcv=0;
+    GLOBAL_DATA->mapped_bufs[i] = (unsigned int *)(GLOBAL_DATA->mapped_transfer_bufs[i]+sizeof(ShmTransferBuffer));
     // MAP_HUGETLB | 25 << MAP_HUGE_SHIFT causes SEGV in HDF5 lib
     if (GLOBAL_DATA->mapped_bufs[i] == NULL) {
       fprintf(stderr, "PLUGIN ERROR: failed to mmap %s\n", GLOBAL_DATA->shm_names[i]);
@@ -178,6 +206,7 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
     }
 
     /* start child process */
+    GLOBAL_DATA->mapped_transfer_bufs[i]->ppid=getpid();
     int pid = fork();
     if (pid < 0) {
       fprintf(stderr, "PLUGIN ERROR: Failed to create subprocess.\n");
@@ -186,19 +215,12 @@ void plugin_open(const char *filename, int info_array[1024], int *error_flag) {
     }
     if (pid == 0) {
       /* This is a child */
-      dup2(GLOBAL_DATA->ptoc_pipes[i][0], 0); // replace STDIN
-      dup2(GLOBAL_DATA->ctop_pipes[i][1], 1); // replace STDOUT
-      close(GLOBAL_DATA->ctop_pipes[i][0]);
-      close(GLOBAL_DATA->ctop_pipes[i][1]);
-      close(GLOBAL_DATA->ptoc_pipes[i][0]);
-      close(GLOBAL_DATA->ptoc_pipes[i][1]);
-      execlp("eiger2cbf-so-worker", "eiger2cbf-so-plugin-worker", fn, GLOBAL_DATA->shm_names[i], child_id, NULL);
+      execlp("eiger2cbf-so-worker", "eiger2cbf-so-plugin-worker", fn, GLOBAL_DATA->shm_names[i], child_id, maxchild_str, NULL);
       fprintf(stderr, "PLUGIN CHILD: Failed to launch eiger2cbf-so-worker. Is it in the PATH?\n");
       exit(-1);
     } else {
       /* This is the parent */
-      close(GLOBAL_DATA->ctop_pipes[i][1]);
-      close(GLOBAL_DATA->ptoc_pipes[i][0]);
+      GLOBAL_DATA->mapped_transfer_bufs[i]->cpid=pid;
     }
   }
 
@@ -340,24 +362,65 @@ void plugin_get_data(int *frame_number, int *nx, int *ny,
   }
 
   int child_id = *frame_number % GLOBAL_DATA->nchild;
+  int retrycount;
+  int terminate;
+  int retval;
+  terminate=0;
   pthread_mutex_lock(&GLOBAL_DATA->locks[child_id]);
-  // fprintf(stderr, "PLUGIN PARENT: get_data for frame #%d delegated to child #%d.\n", *frame_number, child_id);
-  if (write(GLOBAL_DATA->ptoc_pipes[child_id][1], frame_number, sizeof(int)) < 0) {
-    fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for frame #%d.\n", child_id, *frame_number);
-    *error_flag = -1;
-    return;
+  fprintf(stderr, "PLUGIN PARENT: get_data for frame #%d delegated to child #%d.\n", *frame_number, child_id);
+  while (1) {
+    if (GLOBAL_DATA->mapped_transfer_bufs[child_id]->ptoc_flag_snd == GLOBAL_DATA->mapped_transfer_bufs[child_id]->ptoc_flag_rcv) {
+      GLOBAL_DATA->mapped_transfer_bufs[child_id]->ptoc_data = *frame_number;
+      GLOBAL_DATA->mapped_transfer_bufs[child_id]->ptoc_flag_snd == 1-GLOBAL_DATA->mapped_transfer_bufs[child_id]->ptoc_flag_rcv;
+      kill(GLOBAL_DATA->mapped_transfer_bufs[child_id]->cpid,SIGCONT);
+      break;
+    } else {
+      if (++retrycount < 240) {
+        struct timespec sleep = {0, 1000000000L}; nanosleep(&sleep, NULL);
+        /* sleep(1); */
+        kill(GLOBAL_DATA->mapped_transfer_bufs[child_id]->cpid,SIGCONT);
+        if (retrycount%20 == 0)
+          fprintf(stderr, "PLUGIN CHILD %d: write from parent delayed %d sec.\n", 
+            child_id, retrycount);
+        continue;
+      } else {
+        fprintf(stderr, "PLUGIN CHILD %d: write from parent failed.\n", child_id);
+        terminate = -1;
+        retval = -4;
+        break;
+      }
+    }
   }
 
-  int retval;
-  if (read(GLOBAL_DATA->ctop_pipes[child_id][0], &retval, sizeof(int)) < 0) {
-    fprintf(stderr, "PLUGIN ERROR: cannot read from child #%d for frame #%d.\n", child_id, *frame_number);
-    *error_flag = -1;
-    return;
+
+  while (1) {
+    if (GLOBAL_DATA->mapped_transfer_bufs[child_id]->ctop_flag_snd != GLOBAL_DATA->mapped_transfer_bufs[child_id]->ctop_flag_rcv) {
+      retval=GLOBAL_DATA->mapped_transfer_bufs[child_id]->ctop_data;
+      GLOBAL_DATA->mapped_transfer_bufs[child_id]->ctop_flag_rcv == 1-GLOBAL_DATA->mapped_transfer_bufs[child_id]->ctop_flag_snd;
+      kill(GLOBAL_DATA->mapped_transfer_bufs[child_id]->cpid,SIGCONT);
+      fprintf(stderr, "PLUGIN PARENT: received %d for frame #%d from child #%d.\n", retval, *frame_number, child_id);
+      if (retval == 0) {
+        memcpy(data_array, GLOBAL_DATA->mapped_bufs[child_id], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
+      } 
+      break;
+    } else {
+      if (++retrycount < 240) {
+        struct timespec sleep = {0, 1000000000L}; nanosleep(&sleep, NULL);
+        /* sleep(1); */
+        kill(GLOBAL_DATA->mapped_transfer_bufs[child_id]->cpid,SIGCONT);
+        if (retrycount%20 == 0)
+          fprintf(stderr, "PLUGIN CHILD %d: return data delayed %d sec.\n", 
+            child_id, retrycount);
+        continue;
+      } else {
+        fprintf(stderr, "PLUGIN CHILD %d: return data failed.\n", child_id);
+        terminate = -1;
+        retval = -4;
+        break;
+      }
+    }
   }
-  // fprintf(stderr, "PLUGIN PARENT: received %d for frame #%d from child #%d.\n", retval, *frame_number, child_id);
-  if (retval == 0) {
-    memcpy(data_array, GLOBAL_DATA->mapped_bufs[child_id], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
-  }
+
   pthread_mutex_unlock(&GLOBAL_DATA->locks[child_id]);
 
   *error_flag = retval;
@@ -369,13 +432,31 @@ void plugin_close(int *error_flag){
 
   for (int i = 0; i < GLOBAL_DATA->nchild; i++) {
     pthread_mutex_lock(&GLOBAL_DATA->locks[i]);
-    // fprintf(stderr, "PLUGIN PARENT: undelegate to child #%d.\n", i);
+    fprintf(stderr, "PLUGIN PARENT: undelegate to child #%d.\n", i);
     int val = INVALID;
-    if (write(GLOBAL_DATA->ptoc_pipes[i][1], &val, sizeof(int)) < 0) {
-      fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for exit.\n", i);
+    int retrycount;
+    while (1) {
+      if (GLOBAL_DATA->mapped_transfer_bufs[i]->ptoc_flag_snd == GLOBAL_DATA->mapped_transfer_bufs[i]->ptoc_flag_rcv) {
+        GLOBAL_DATA->mapped_transfer_bufs[i]->ptoc_data = val;
+        GLOBAL_DATA->mapped_transfer_bufs[i]->ptoc_flag_snd == 1-GLOBAL_DATA->mapped_transfer_bufs[i]->ptoc_flag_rcv;
+        kill(GLOBAL_DATA->mapped_transfer_bufs[i]->cpid,SIGCONT);
+        break;
+      } else {
+        if (++retrycount < 240) {
+        struct timespec sleep = {0, 1000000000L}; nanosleep(&sleep, NULL);
+        /* sleep(1); */
+        kill(GLOBAL_DATA->mapped_transfer_bufs[i]->cpid,SIGCONT);
+        if (retrycount%20 == 0)
+            fprintf(stderr, "PLUGIN CHILD %d: write from parent delayed %d sec.\n", 
+              i, retrycount);
+          continue;
+        } else {
+          fprintf(stderr, "PLUGIN ERROR: cannot write to child #%d for exit.\n", i);
+        }
+      }
     }
     pthread_mutex_unlock(&GLOBAL_DATA->locks[i]);
-    munmap(GLOBAL_DATA->mapped_bufs[i], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
+    munmap(GLOBAL_DATA->mapped_transfer_bufs[i], sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy+sizeof(ShmTransferBuffer));
     shm_unlink(GLOBAL_DATA->shm_names[i]);
   }
   did_close=1;
@@ -385,4 +466,4 @@ void emergency_close( void ){
     int error_flag;
     if (!did_close) plugin_close(&error_flag);
 }
-    
+

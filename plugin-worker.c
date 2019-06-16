@@ -12,7 +12,6 @@ To build:
  Linux:
 
  gcc -std=gnu99 -o plugin-worker -g -O3 \
-     -I/app/dials/base/include -L/app/dials/base/lib \
      plugin-worker.c \
      -Ilz4 lz4/lz4.c lz4/h5zlz4.c \
      bitshuffle/bshuf_h5filter.c \
@@ -24,12 +23,16 @@ To build:
  TODO: need to test.
 */
 
+#define _GNU_SOURCE
 #include <unistd.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <time.h>
 #include <H5Ppublic.h>
 #include "H5api_adpt.h"
 #include "hdf5_hl.h"
@@ -44,6 +47,17 @@ void register_filters() {
   H5Zregister(&bshuf_H5Filter);
 }
 
+typedef struct _ShmTransferBuffer {
+    volatile int ptoc_flag_snd;  /* only modify from parent, and only after putting data in ptoc_data */
+    volatile int ptoc_flag_rcv;  /* only modify from child,  and only after processing incoming ptoc_data */
+    volatile int ptoc_data;      /* only modify from parent, and only when ptoc_flag_snd==ptoc_flag_rcv */
+    volatile pid_t ppid;         /* parent process pid, returned by getpid in the parent */
+    volatile int ctop_flag_snd;  /* only modify ftom child,  and only after putting data in ctop_data */
+    volatile int ctop_flag_rcv;  /* only modify from parent, and only after processing incoming ctop_data */
+    volatile int ctop_data;      /* only modify from child,  and only when ctop_flag_snd==ctop_flag_rcv */
+    volatile pid_t cpid;         /* child process pid, returned by fork in the parent and getpid in the child */
+} ShmTransferBuffer;
+
 struct GlobalData {
   hid_t hdf, group;
   int dimx, dimy;
@@ -55,9 +69,12 @@ struct GlobalData {
   float ypixelSize;
   int block_start;
   unsigned int error_val;
+  ShmTransferBuffer *mapped_transfer_buf;
   unsigned int *mapped_buf;
 };
 struct GlobalData *GLOBAL_DATA = NULL;
+
+static void sigcont_handler (int signal, siginfo_t *siginfo, void * context) {}
 
 void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy,
                        int *number_of_frames, int info[1024],
@@ -70,6 +87,7 @@ int open_file(const char *filename) {
   fprintf(stderr, "PLUGIN INFO: plugin_open called with filename = %s\n", filename);
   if (GLOBAL_DATA != NULL) {
     fprintf(stderr, "PLUGIN ERROR: CAN ONLY OPEN ONE FILE AT A TIME\n");
+    fflush(stderr);
     return -4;
   }
 
@@ -79,6 +97,7 @@ int open_file(const char *filename) {
   GLOBAL_DATA->hdf = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
   if (GLOBAL_DATA->hdf < 0) {
     fprintf(stderr, "PLUGIN ERROR: Failed to open file %s\n", filename);
+    fflush(stderr);
     return -4;
   }
 
@@ -99,6 +118,7 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
 
   if (GLOBAL_DATA == NULL) {
     fprintf(stderr, "PLUGIN ERROR: plugin_get_header called before plugin_open\n");
+    fflush(stderr);
     *error_flag = -2;
     return;
   }
@@ -161,6 +181,7 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/ntrigger", &ntrigger);
   if (ntrigger < 0) {
     fprintf(stderr, "PLUGIN ERROR: failed to read the ntrigger.\n");
+    fflush(stderr);
     *error_flag = -4;
     return;
   }
@@ -171,6 +192,7 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
   entry = H5Gopen2(hdf, "/entry", H5P_DEFAULT);
   if (entry < 0) {
     fprintf(stderr, "PLUGIN ERROR: /entry does not exist!\n");
+    fflush(stderr);
     *error_flag = -4;
     return;
   }
@@ -200,6 +222,7 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
   dataspace = H5Dget_space(data);
   if (data < 0) {
     fprintf(stderr, "PLUGIN ERROR: failed to open /entry/%s\n", data_name);
+    fflush(stderr);
     *error_flag = -4;
     return;
   }
@@ -231,7 +254,7 @@ void plugin_get_header(int *nx, int *ny, int *nbytes, float *qx, float *qy, int 
 }
 
 int prev_block_number = -1;
-hid_t data = NULL, dataspace = NULL, memspace=NULL;
+hid_t data = 0, dataspace = 0, memspace=0;
 
 int get_data(int myid, int frame_number, int *mapped_buf) {
   int ret;
@@ -245,18 +268,20 @@ int get_data(int myid, int frame_number, int *mapped_buf) {
   if (prev_block_number != block_number) {
     prev_block_number = block_number;
 
-    if (data != NULL) H5Dclose(data); 
-    if (dataspace != NULL) H5Sclose(dataspace);
+    if (data != 0) H5Dclose(data); 
+    if (dataspace != 0) H5Sclose(dataspace);
 
     snprintf(data_name, 20, "data_%06d", block_number); 
     data = H5Dopen2(GLOBAL_DATA->group, data_name, H5P_DEFAULT);
     dataspace = H5Dget_space(data);
     if (data < 0) {
       fprintf(stderr, "failed to open /entry/%s\n", data_name);
+      fflush(stderr);
       return -4;
     }
     if (H5Sget_simple_extent_ndims(dataspace) != 3) {
       fprintf(stderr, "Dimension of /entry/%s is not 3!\n", data_name);
+      fflush(stderr);
       return -4;
     }
   }
@@ -266,19 +291,21 @@ int get_data(int myid, int frame_number, int *mapped_buf) {
   hsize_t count[3] = {1, ypixels, xpixels};
 
   /* Create memory space */
-  if (memspace == NULL) {
+  if (memspace == 0) {
     hsize_t dims[3];
     H5Sget_simple_extent_dims(dataspace, dims, NULL);
 
     memspace = H5Screate_simple(3, dims, NULL);
     if (memspace < 0) {
       fprintf(stderr, "PLUGIN CHILD %d for frame #%d: failed to create memspace.\n", myid, frame_number);
+      fflush(stderr);
       return -4;
     }
     ret = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, offset_out, NULL, 
                               count, NULL);
     if (ret < 0) {
       fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for memory failed.\n", myid, frame_number);
+      fflush(stderr);
       return -2;
     }
   }
@@ -287,12 +314,14 @@ int get_data(int myid, int frame_number, int *mapped_buf) {
   ret = H5Sselect_hyperslab(dataspace, H5S_SELECT_SET, offset_in, NULL, count, NULL);
   if (ret < 0) {
     fprintf(stderr, "PLUGIN CHILD %d for frame #%d: select_hyperslab for file failed.\n", myid, frame_number);
+    fflush(stderr);
     return -2;
   }
 
   ret = H5Dread(data, H5T_NATIVE_UINT, memspace, dataspace, H5P_DEFAULT, mapped_buf);
   if (ret < 0) {
     fprintf(stderr, "PLUGIN CHILD %d for frame #%d: H5Dread for image failed.\n", myid, frame_number);
+    fflush(stderr);
     return -2;
   }
 
@@ -319,16 +348,32 @@ void usr1_handler(int dummy) {
 }
 
 int main(int argc, char **argv) {
-  if (argc != 4) {
+  int failed = 0;
+  fprintf(stderr,"Entering plugin-worker with args %s %s %s %s %s %s \n",argv[0],argv[1],argv[2],argv[3],argv[4]);
+  if (argc < 5) {
     fprintf(stderr, "PLUGIN: This program should not be called from the command line.\n");
     return -1;
   }
   int myid = atoi(argv[3]);
+  int mymaxchild = atoi(argv[4]);
+  if (myid  < 0 || myid > mymaxchild ) {
+      fprintf(stderr, "PLUGIN worker called with myid %d mymaxchild %d \n",myid,mymaxchild);
+      return -1;
+  }
+
   fprintf(stderr, "PLUGIN CHILD %d started for %s with shared memory %s.\n", myid, argv[1], argv[2]);
 
-  int failed = 0;
   if (open_file(argv[1]) < 0) {
     failed = 1;
+  }
+
+  struct sigaction action;
+  memset (&action, '\0', sizeof(action));
+  action.sa_sigaction=&sigcont_handler;
+  action.sa_flags = SA_SIGINFO;
+  if (sigaction(SIGCONT, &action, NULL) < 0) {
+    fprintf(stderr,"sigaction failed\n");
+    failed=1;
   }
 
   int child_shm_fd = shm_open(argv[2], O_RDWR, 0);
@@ -336,12 +381,18 @@ int main(int argc, char **argv) {
     fprintf(stderr, "PLUGIN CHILD %d: Failed to open shared memory %s.\n", myid, argv[2]);
     failed = 1;
   } else {
-    GLOBAL_DATA->mapped_buf = mmap(0, sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy, 
+    GLOBAL_DATA->mapped_buf = mmap(0, sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy
+                                   +sizeof(ShmTransferBuffer)*mymaxchild, 
                                    PROT_READ | PROT_WRITE, MAP_SHARED, child_shm_fd, 0);
+
     if (GLOBAL_DATA->mapped_buf == NULL) {
       fprintf(stderr, "PLUGIN CHILD %d: Failed to setup memory mapping.\n", myid);
       failed = 1;
     }    
+    GLOBAL_DATA->mapped_transfer_buf = (ShmTransferBuffer *)GLOBAL_DATA->mapped_buf+sizeof(ShmTransferBuffer)*myid;
+    GLOBAL_DATA->mapped_transfer_buf->cpid = getpid();
+    GLOBAL_DATA->mapped_buf+=sizeof(ShmTransferBuffer)*mymaxchild;
+
   }
   if (failed != 0) {
     fprintf(stderr, "PLUGIN CHILD %d: Failed to start.\n", myid);
@@ -356,26 +407,73 @@ int main(int argc, char **argv) {
   #endif
 
   int frame_num;
-  while (1) {
-    /* receive command from the parent */
-    if (read(0, &frame_num, sizeof(int)) < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d ERROR: cannot read from parent.\n", myid);
-      // we cannot do anything but crash!
-    }
-    if (frame_num == INVALID) break;
+  int terminate;
+  int retrycount;
+  terminate=0;
+  retrycount=0;
 
+
+  while (1) {
+    while (1) {
+      if (GLOBAL_DATA->mapped_transfer_buf->ptoc_flag_snd != GLOBAL_DATA->mapped_transfer_buf->ptoc_flag_rcv) {
+        frame_num=GLOBAL_DATA->mapped_transfer_buf->ptoc_data;
+        GLOBAL_DATA->mapped_transfer_buf->ptoc_flag_rcv = 1-GLOBAL_DATA->mapped_transfer_buf->ptoc_flag_snd;
+        kill(GLOBAL_DATA->mapped_transfer_buf->ppid,SIGCONT);
+        break;
+      } else {
+        if (++retrycount < 240) {
+          struct timespec sleep = {0, 1000000000L}; nanosleep(&sleep, NULL);
+          /* sleep(1); */
+          kill(GLOBAL_DATA->mapped_transfer_buf->ppid,SIGCONT);
+          if (retrycount%20 == 0)
+            fprintf(stderr, "PLUGIN CHILD %d: parent to child data delayed %d sec.\n", 
+              myid, retrycount); 
+          continue;
+        } else {
+          fprintf(stderr, "PLUGIN CHILD %d: parent to child data failed\n", myid);
+          terminate = -1;
+          break;
+        }
+      }
+    }
+
+    if (frame_num == INVALID) break;
+    if (terminate < 0) break;
     /* do the work */
-    // fprintf(stderr, "PLUGIN CHILD %d: got request for frame #%d.\n", myid, frame_num);
+    fprintf(stderr, "PLUGIN CHILD %d: got request for frame #%d.\n", myid, frame_num);
     int retval = get_data(myid, frame_num, GLOBAL_DATA->mapped_buf);
 
-    /* send back the result */
-    if (write(1, &retval, sizeof(int)) < 0) {
-      fprintf(stderr, "PLUGIN CHILD %d ERROR: cannot write to parent.\n", myid);
+    retrycount=0;
+    while(1) {
+      if (GLOBAL_DATA->mapped_transfer_buf->ctop_flag_snd == GLOBAL_DATA->mapped_transfer_buf->ctop_flag_rcv) {
+        GLOBAL_DATA->mapped_transfer_buf->ctop_data = retval;
+        GLOBAL_DATA->mapped_transfer_buf->ctop_flag_snd == 1-GLOBAL_DATA->mapped_transfer_buf->ctop_flag_rcv;
+        kill(GLOBAL_DATA->mapped_transfer_buf->ppid,SIGCONT);
+        break;
+      } else {
+        if (++retrycount < 240) {
+          struct timespec sleep = {0, 1000000000L}; nanosleep(&sleep, NULL);
+          /* sleep(1); */
+          kill(GLOBAL_DATA->mapped_transfer_buf->ppid,SIGCONT);
+          if (retrycount%20 == 0)
+            fprintf(stderr, "PLUGIN CHILD %d: write to parent delayed %d sec.\n", 
+              myid, retrycount);
+          continue;
+        } else {
+          fprintf(stderr, "PLUGIN CHILD %d: write to parent failed.\n", myid);
+          terminate = -1;
+          break;
+        }
+      }
     }
-    // fprintf(stderr, "PLUGIN CHILD %d: processed frame #%d with retval %d.\n", myid, frame_num, retval);
+
+    if (terminate == -1) break;
+    fprintf(stderr, "PLUGIN CHILD %d: processed frame #%d with retval %d.\n", myid, frame_num, retval);
+   
   }
 
-  munmap(GLOBAL_DATA->mapped_buf, sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy);
+  munmap(GLOBAL_DATA->mapped_buf-sizeof(ShmTransferBuffer)*mymaxchild, 
+    sizeof(unsigned int) * GLOBAL_DATA->dimx * GLOBAL_DATA->dimy+sizeof(ShmTransferBuffer)*mymaxchild);
   shm_unlink(argv[2]);
   free(GLOBAL_DATA -> minus1);
   free(GLOBAL_DATA -> minus2);
