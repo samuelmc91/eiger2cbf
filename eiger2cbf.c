@@ -62,6 +62,8 @@ void usage( int argc, char **argv ) {
     printf("    -h or --help                     -- print this message\n");
     printf("    -v or --verbose                  -- provide more detail in output\n"); 
     printf("    --beam-center beamx,beamy        -- new beam center in pixels\n");
+    printf("    --detector detector              -- dectector such as \"Eiger 1M CdTe\"\n");
+    printf("    --detector_sn serial_no          -- dectector serial number"\n);
     printf("    --nimages images                 -- override the number of images\n");
     return;  
 }
@@ -90,15 +92,19 @@ int main(int argc, char **argv) {
   int ii;
   char* endptr;
   char* fndptr;
+  char* detector=NULL;
+  char* detector_xsn=NULL;
   double pixelsize = -1, wavelength = -1, distance = -1, count_time = -1, 
     frame_time = -1, osc_width = -1, osc_start = -9999, thickness = -1;
   char detector_sn[256] = {}, description[256] = {}, version[256] = {};
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (version 160929)\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (version 191219)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
-  fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for details.\n\n");
+  fprintf(stderr, "NSLS-II revisions by Herbert J. Bernstein\n"
+  fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for original.\n\n");
+  fprintf(stderr, " see https://github.com/nsls-ii-mx/eiger2cbf for NSLS-II version.\n\n");
 
   for (ii=1; ii < argc; ii++) {
     if (!strcmp(argv[ii],"-h") || !strcmp(argv[ii],"--help")) {
@@ -108,6 +114,22 @@ int main(int argc, char **argv) {
     } else if (!strcmp(argv[ii],"-v") || !strcmp(argv[ii],"--verbose")) {
       verbose = 1;
       optcount ++;
+    } else if (!strcmp(argv[ii],"--detector")) {
+      detector = NULL;
+      optcount ++;
+      if (ii < argc-1) {
+        ii++;
+        optcount ++;
+        detector = argv[ii];
+      }
+    } else if (!strcmp(argv[ii],"--detector_sn")) {
+      detector_xsn = NULL;
+      optcount ++;
+      if (ii < argc-1) {
+        ii++;
+        optcount ++;
+        detector_xsn = argv[ii];
+      }
     } else if (!strcmp(argv[ii],"--beam-center")) {
       new_beam_cent = 1;
       optcount ++;
@@ -198,10 +220,22 @@ int main(int argc, char **argv) {
   H5Eset_auto(0, NULL, NULL); // Comment out this line for debugging.
 
   fprintf(stderr, "Metadata in HDF5:\n");
-  H5LTread_dataset_string(hdf, "/entry/instrument/detector/description", description);
-  fprintf(stderr, " /entry/instrument/detector/description = %s\n", description);
-  H5LTread_dataset_string(hdf, "/entry/instrument/detector/detector_number", detector_sn);
-  fprintf(stderr, " /entry/instrument/detector/detector_number = %s\n", detector_sn);
+  if (detector) {
+      strncpy(description,detector,255);
+      description[255]=0;
+      fprintf(stderr,"  /entry/instrument/detector/description overidden by %s\n", description);
+  } else {
+      H5LTread_dataset_string(hdf, "/entry/instrument/detector/description", description);
+      fprintf(stderr, " /entry/instrument/detector/description = %s\n", description);
+  }
+  if (detector_xsn) {
+      strncpy(detector_sn,detector_xsn,255);
+      detector_sn[255]=0;
+      fprintf(stderr, " /entry/instrument/detector/detector_number overridden by %s\n", detector_sn);
+  } else {
+      H5LTread_dataset_string(hdf, "/entry/instrument/detector/detector_number", detector_sn);
+      fprintf(stderr, " /entry/instrument/detector/detector_number = %s\n", detector_sn);
+  }
   H5LTread_dataset_string(hdf, "/entry/instrument/detector/detectorSpecific/software_version", version);
   fprintf(stderr, " /entry/instrument/detector/detectorSpecific/software_version = %s\n", version);
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/bit_depth_image", &depth);
