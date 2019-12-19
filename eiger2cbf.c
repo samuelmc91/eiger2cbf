@@ -63,7 +63,7 @@ void usage( int argc, char **argv ) {
     printf("    -v or --verbose                  -- provide more detail in output\n"); 
     printf("    --beam-center beamx,beamy        -- new beam center in pixels\n");
     printf("    --detector detector              -- dectector such as \"Eiger 1M CdTe\"\n");
-    printf("    --detector_sn serial_no          -- dectector serial number"\n);
+    printf("    --detector_sn serial_no          -- dectector serial number\n");
     printf("    --nimages images                 -- override the number of images\n");
     return;  
 }
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
 
   fprintf(stderr, "EIGER HDF5 to CBF converter (version 191219)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
-  fprintf(stderr, "NSLS-II revisions by Herbert J. Bernstein\n"
+  fprintf(stderr, "NSLS-II revisions by Herbert J. Bernstein\n");
   fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for original.\n\n");
   fprintf(stderr, " see https://github.com/nsls-ii-mx/eiger2cbf for NSLS-II version.\n\n");
 

@@ -1,7 +1,8 @@
 # This Makefile was contributed by Harry Powell (MRC-LMB)
 # Revised for NSLS-II LSBR cluster HJB, 17 Aug 16, 6 Jul 17
 
-PREFIX ?=	/usr/local/crys-local/ccp4-7.0
+#PREFIX ?=	/usr/local/crys-local/ccp4-7.0
+PREFIX ?=	$(PWD)
 CBFLIB ?=	$(PREFIX)/lib
 CBFINC ?=	$(PREFIX)/include/cbflib
 HDF5LIB ?=	$(PREFIX)/lib
