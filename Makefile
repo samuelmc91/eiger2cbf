@@ -2,7 +2,8 @@
 # Revised for NSLS-II LSBR cluster HJB, 17 Aug 16, 6 Jul 17
 
 #EIGER2CBF_PREFIX ?=	/usr/local/crys-local/ccp4-7.0
-EIGER2CBF_PREFIX ?=	$(PWD)
+EIGER2CBF_PREFIX ?=	/usr/local/crys-local
+#EIGER2CBF_PREFIX ?=	$(PWD)
 CBFLIB_LIB_INSTALL ?=	$(EIGER2CBF_PREFIX)/lib
 CBFLIB_KIT ?=	$(EIGER2CBF_PREFIX)/cbflib
 CBFINC ?=	$(EIGER2CBF_PREFIX)/include/cbflib
@@ -123,7 +124,7 @@ $(EIGER2CBF_PREFIX)/bin:
 $(EIGER2CBF_PREFIX)/lib:
 	mkdir -p $(EIGER2CBF_PREFIX)/lib
 
-install: all $(EIGER2CBF_PREFIX)/bin $(PREFIX)/lib \
+install: all $(EIGER2CBF_PREFIX)/bin $(EIGER2CBF_PREFIX)/lib \
 	eiger2cbf_par eiger2cbf_4t eiger2cbf eiger2params eiger2cbf.so eiger2cbf-so-worker \
 	xsplambda2cbf $(CBFLIB_KIT)
 	cp eiger2cbf $(EIGER2CBF_PREFIX)/bin/eiger2cbf
