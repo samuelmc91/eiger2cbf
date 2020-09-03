@@ -32,7 +32,7 @@ $(CBFLIB_KIT):  clone_cbflib_kit
 	touch $(CBFLIB_KIT)
 	(export CBF_PREFIX=$(EIGER2CBF_BUILD);cd $(CBFLIB_KIT);make install;)
 	
-$(CBFLIB_KIT_INSTALL):	$(CBFLIB_KIT)
+CBFLIB_KIT_INSTALL:	$(CBFLIB_KIT)
 	(export CBF_PREFIX=$(EIGER2CBF_PREFIX);cd $(CBFLIB_KIT);make install;)
 	
 $(EIGER2CBF_BUILD)/bin/eiger2cbf:  eiger2cbf.c lz4/lz4.c lz4/h5zlz4.c \
