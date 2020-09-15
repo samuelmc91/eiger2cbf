@@ -44,6 +44,8 @@ gcc -std=c99 -o eiger2params -g \
 #include "hdf5.h"
 #include "hdf5_hl.h"
 
+char* strcasestr(const char *, const char *);
+
 /*  signature for fgetln
     note that a copy of fgetln is included in this kit, in case libbsd is not there */
 char * fgetln(FILE *stream, size_t *len);
