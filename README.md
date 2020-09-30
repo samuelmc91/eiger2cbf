@@ -1,4 +1,15 @@
 eiger2cbf: EIGER HDF5 to miniCBF converter
+=========================================
+
+This is a fork of the orginal eiger2cbf written by Takanori Nakane.
+This version contains mods for the NSLS-II MX beamlines.  
+
+------------------------------------------
+BEGINNING OF THE ORIGINAL EIGER2CBF README
+========================================== 
+
+
+eiger2cbf: EIGER HDF5 to miniCBF converter
 ==========================================
 
 eiger2cbf is a simple program that converts diffraction images from
@@ -138,4 +149,22 @@ directories.
 
 eiger2cbf also depends on [HDF5 library](https://www.hdfgroup.org/HDF5/) and 
 [CBFlib](http://www.bernstein-plus-sons.com/software/CBF/). 
-See LICENSE.HDF5 and LICENSE.CBFlib. Both are not included in this source distribution.
+See LICENSE.HDF5 and LICENSE.CBFlib. Both are included in this source distribution.
+
+END OF THE ORIGINAL EIGER2CBF README
+========================================== 
+------------------------------------------
+
+-----------------------------------------
+ADDITIONS FOR NSLS-II TO EIGER2CBF README
+=========================================
+
+SUPPORT FOR MS WINDOWS
+======================
+
+As of September 2020, there are two ways in which to adapt eiger2cbf to MS Windows 10,
+use WSL2 Ubuntu or use MSYS2. WLS2 Ubuntu provides full support for all eiger2cbf
+features, but requires that the WSL2 Ubuntu subsystem have been installed first,
+making installation on older Windows 10 systems problematic.  The MSYS2 version has
+more limited feature support, but allows to creation of an NSIS installer that can
+be used to install the eiger2cbf program as eiger2cbf.bat, but not of the plugins. 

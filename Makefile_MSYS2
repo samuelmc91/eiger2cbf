@@ -1,5 +1,6 @@
 # This Makefile was contributed by Harry Powell (MRC-LMB)
 # Revised for NSLS-II LSBR cluster HJB, 17 Aug 16, 6 Jul 17
+# Revised for Windows 10 MSYS2 MINGW32, 27 Sep 20
 
 EIGER2CBF_PREFIX ?=	/usr/local/crys-local
 EIGER2CBF_BUILD =	$(PWD)
@@ -20,7 +21,10 @@ all:	CBFLIB_KIT_INSTALL \
 	$(EIGER2CBF_BUILD)/bin/xsplambda2cbf \
 	$(EIGER2CBF_BUILD)/bin/eiger2cbf_par \
 	$(EIGER2CBF_BUILD)/bin/eiger2cbf_4t \
-	$(EIGER2CBF_BUILD)/bin/eiger2params
+	$(EIGER2CBF_BUILD)/bin/eiger2params \
+	$(EIGER2CBF_BUILD)/mswin
+#       Remove plugin support for MSYS2 because unix
+#       style memory mapping not supported
 #	$(EIGER2CBF_BUILD)/lib/eiger2cbf.so \
 #	$(EIGER2CBF_BUILD)/bin/eiger2cbf-so-worker \
 
@@ -41,6 +45,48 @@ $(CBFLIB_KIT):  clone_cbflib_kit
 	
 CBFLIB_KIT_INSTALL:	$(CBFLIB_KIT)
 	(CBF_PREFIX="$(EIGER2CBF_PREFIX)"; export CBF_PREFIX; cd $(CBFLIB_KIT);make -f Makefile_MSYS2  install;)
+
+$(EIGER2CBF_BUILD)/mswin: $(EIGER2CBF_BUILD)/bin/eiger2cbf \
+	README.md \
+	/mingw32/bin/libgcc_s_dw2-1.dll \
+	/mingw32/bin/libhdf5-0.dll \
+	/mingw32/bin/libhdf5_cpp-0.dll \
+	/mingw32/bin/libhdf5_f90cstub-0.dll \
+	/mingw32/bin/libhdf5_fortran-0.dll \
+	/mingw32/bin/libhdf5_hl-0.dll \
+	/mingw32/bin/libhdf5_hl_cpp-0.dll \
+	/mingw32/bin/libhdf5_hl_f90cstub-0.dll \
+	/mingw32/bin/libhdf5_hl_fortran-0.dll \
+	/mingw32/bin/libhdf5_tools-0.dll \
+	/mingw32/bin/libpcre-1.dll \
+	/mingw32/bin/libpcrecpp-0.dll \
+	/mingw32/bin/libpcreposix-0.dll \
+	/mingw32/bin/libszip.dll \
+	/mingw32/bin/libwinpthread-1.dll \
+	/mingw32/bin/libzip.dll \
+	/mingw32/bin/zlib1.dll
+	mkdir -p $(EIGER2CBF_BUILD)/mswin/bin
+	mkdir -p $(EIGER2CBF_BUILD)/mswin/doc
+	cp $(EIGER2CBF_BUILD)/bin/eiger2cbf $(EIGER2CBF_BUILD)/mswin/bin/eiger2cbf.exe
+	cp README.md $(EIGER2CBF_BUILD)/mswin/README.md
+	cp /mingw32/bin/libgcc_s_dw2-1.dll $(EIGER2CBF_BUILD)/mswin/bin/libgcc_s_dw2-1.dll
+	cp /mingw32/bin/libhdf5-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5-0.dll
+	cp /mingw32/bin/libhdf5_cpp-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_cpp-0.dll
+	cp /mingw32/bin/libhdf5_f90cstub-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_f90cstub-0.dll
+	cp /mingw32/bin/libhdf5_fortran-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_fortran-0.dll
+	cp /mingw32/bin/libhdf5_hl-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_hl-0.dll
+	cp /mingw32/bin/libhdf5_hl_cpp-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_hl_cpp-0.dll
+	cp /mingw32/bin/libhdf5_hl_f90cstub-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_hl_f90cstub-0.dll
+	cp /mingw32/bin/libhdf5_hl_fortran-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_hl_fortran-0.dll
+	cp /mingw32/bin/libhdf5_tools-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libhdf5_tools-0.dll
+	cp /mingw32/bin/libpcre-1.dll $(EIGER2CBF_BUILD)/mswin/bin/libpcre-1.dll
+	cp /mingw32/bin/libpcrecpp-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libpcrecpp-0.dll
+	cp /mingw32/bin/libpcreposix-0.dll $(EIGER2CBF_BUILD)/mswin/bin/libpcreposix-0.dll
+	cp /mingw32/bin/libszip.dll $(EIGER2CBF_BUILD)/mswin/bin/libszip.dll
+	cp /mingw32/bin/libwinpthread-1.dll $(EIGER2CBF_BUILD)/mswin/bin/libwinpthread-1.dll
+	cp /mingw32/bin/libzip.dll $(EIGER2CBF_BUILD)/mswin/bin/libzip.dll
+	cp /mingw32/bin/zlib1.dll $(EIGER2CBF_BUILD)/mswin/bin/zlib1.dll
+
 	
 $(EIGER2CBF_BUILD)/bin/eiger2cbf:  eiger2cbf.c $(LZ4SRC)/lz4.c $(LZ4SRC)/H5Zlz4.c \
 	$(BSHUFSRC)/bshuf_h5filter.c \
@@ -173,6 +219,8 @@ install: all $(EIGER2CBF_PREFIX)/bin $(EIGER2CBF_PREFIX)/lib \
 #	cp $(EIGER2CBF_BUILD)/lib/eiger2cbf.so $(EIGER2CBF_PREFIX)/bin/eiger2cbf.so
 	cp $(EIGER2CBF_BUILD)/bin/xsplambda2cbf $(EIGER2CBF_PREFIX)/bin/xsplambda2cbf
 	chmod 755 $(EIGER2CBF_PREFIX)/bin/xsplambda2cbf
+	rm -rf $(EIGER2CBF_PREFIX)/EIGER2CBF_MSWIN
+	rsync -avz $(EIGER2CBF_BUILD)/mswin/ $(EIGER2CBF_PREFIX)/EIGER2CBF_MSWIN/mswin
 
 clean: 
 	rm -rf *.o 
@@ -189,4 +237,7 @@ distclean:	clean
 	touch clone_cbflib_kit
 	rm -rf $(EIGER2CBF_BUILD)/bin
 	rm -rf $(EIGER2CBF_BUILD)/lib
+	rm -rf $(EIGER2CBF_BUILD)/mswin/bin/eiger2cbf.exe
+	rm -rf $(EIGER2CBF_BUILD)/mswin/bin/*.dll
+	rm -rf $(EIGER2CBF_BUILD)/mswin/README.md
 
