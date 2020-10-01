@@ -94,13 +94,16 @@ int main(int argc, char **argv) {
   char* fndptr;
   char* detector=NULL;
   char* detector_xsn=NULL;
-  double pixelsize = -1, wavelength = -1, distance = -1, count_time = -1, 
+  double pixelsizex = -1, pixelsizey = -1, wavelength = -1, distance = -1, count_time = -1, 
     frame_time = -1, osc_width = -1, osc_start = -9999, thickness = -1;
+  int thicknessint = -1;
+  int pixelsizexint = -1;
+  int pixelsizeyint = -1;
   char detector_sn[256] = {}, description[256] = {}, version[256] = {};
 
   hid_t hdf;
 
-  fprintf(stderr, "EIGER HDF5 to CBF converter (version 191219)\n");
+  fprintf(stderr, "EIGER HDF5 to CBF converter (version 201001)\n");
   fprintf(stderr, " written by Takanori Nakane\n");
   fprintf(stderr, "NSLS-II revisions by Herbert J. Bernstein\n");
   fprintf(stderr, " see https://github.com/biochem-fan/eiger2cbf for original.\n\n");
@@ -236,7 +239,11 @@ int main(int argc, char **argv) {
       H5LTread_dataset_string(hdf, "/entry/instrument/detector/detector_number", detector_sn);
       fprintf(stderr, " /entry/instrument/detector/detector_number = %s\n", detector_sn);
   }
-  H5LTread_dataset_string(hdf, "/entry/instrument/detector/detectorSpecific/software_version", version);
+  if (H5LTread_dataset_string(hdf, "/entry/instrument/detector/detectorSpecific/software_version", version) < 0){
+    fprintf(stderr, " /entry/instrument/detector/detectorSpecific/software_version not found, set to '.'\n");
+    version[0]='.';
+    version[1]='\0';
+  };
   fprintf(stderr, " /entry/instrument/detector/detectorSpecific/software_version = %s\n", version);
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/bit_depth_image", &depth);
   if (depth > 0) {
@@ -277,12 +284,15 @@ int main(int argc, char **argv) {
     }
   }
 
-  H5LTread_dataset_double(hdf, "/entry/instrument/detector/sensor_thickness", &thickness); // in m 
-  if (thickness > 0) {
-    fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (um)\n", thickness * 1E6);
-  } else {
-    thickness = 450E-6;
-    fprintf(stderr, " /entry/instrument/detector/sensor_thickness is not avaialble. We assume it is %f um\n", thickness * 1E6);
+  ret = H5LTread_dataset_double(hdf, "/entry/instrument/detector/sensor_thickness", &thickness); // in m
+  if (ret >= 0) { 
+    if (thickness > 0) {
+      fprintf(stderr, " /entry/instrument/detector/sensor_thickness = %f (um)\n", thickness * 1E6);
+    } else {
+      thickness = 450E-6;
+      fprintf(stderr, " /entry/instrument/detector/sensor_thickness is not avaialble. We assume it is %f um\n", thickness * 1E6);
+    }
+    thicknessint=(int)(thickness*1.e6+0.5);
   }
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/x_pixels_in_detector", &xpixels);
   H5LTread_dataset_int(hdf, "/entry/instrument/detector/detectorSpecific/y_pixels_in_detector", &ypixels);
@@ -295,8 +305,18 @@ int main(int argc, char **argv) {
   fprintf(stderr, " /entry/instrument/detector/count_time = %f (sec)\n", count_time);
   H5LTread_dataset_double(hdf, "/entry/instrument/detector/frame_time", &frame_time); // in 
   fprintf(stderr, " /entry/instrument/detector/frame_time = %f (sec)\n", frame_time);
-  H5LTread_dataset_double(hdf, "/entry/instrument/detector/x_pixel_size", &pixelsize); // in 
-  fprintf(stderr, " /entry/instrument/detector/x_pixel_size = %f (m)\n", pixelsize);
+  if (H5LTread_dataset_double(hdf, "/entry/instrument/detector/x_pixel_size", &pixelsizex) < 0 ) {
+    fprintf(stderr, " /entry/instrument/detector/x_pixel_size not found.  We assume it is 75 um\n");
+    pixelsizex = 0.000075;
+  }; // in m
+  if (H5LTread_dataset_double(hdf, "/entry/instrument/detector/y_pixel_size", &pixelsizey) < 0 ) {
+    fprintf(stderr, " /entry/instrument/detector/y_pixel_size not found.  We assume it is 75 um\n");
+    pixelsizey = 0.000075;
+  }; // in m
+  fprintf(stderr, " /entry/instrument/detector/x_pixel_size = %f (m)\n", pixelsizex);
+  fprintf(stderr, " /entry/instrument/detector/y_pixel_size = %f (m)\n", pixelsizey);
+  pixelsizexint = pixelsizex*1.e6;
+  pixelsizeyint = pixelsizey*1.e6;
 
   // Detector distance
 
@@ -449,7 +469,7 @@ int main(int argc, char **argv) {
       "\n"
       "# Detector: %s, S/N %s\n"
       "# Pixel_size %de-6 m x %de-6 m\n"
-      "# Silicon sensor, thickness %.6f m\n"
+      "# Silicon sensor, thickness %de-6 m\n"
       "# Exposure_time %f s\n"
       "# Exposure_period %f s\n"
       "# Count_cutoff %d counts\n"
@@ -462,8 +482,8 @@ int main(int argc, char **argv) {
     char header_content[4096] = {};
     snprintf(header_content, 4096, header_format,
 	     description, detector_sn,
-	     thickness,
-	     (int)(pixelsize * 1E6), (int)(pixelsize * 1E6),
+	     pixelsizexint, pixelsizeyint,
+	     thicknessint,
 	     count_time, frame_time, countrate_cutoff, wavelength, distance,
 	     new_beam_cent?nbeamx:beamx, new_beam_cent?nbeamy:beamy, osc_start, osc_width);
 
@@ -472,8 +492,8 @@ int main(int argc, char **argv) {
 
     int block_number = block_start + (frame - 1) / number_per_block;
     int frame_in_block = (frame - 1) % number_per_block;
-//    fprintf(stderr, " frame %d is in data_%06d frame %d (1-indexed).\n", 
-//            frame, block_number, frame_in_block + 1);
+    //    fprintf(stderr, " frame %d is in data_%06d frame %d (1-indexed).\n", 
+    //            frame, block_number, frame_in_block + 1);
     
     snprintf(data_name, 20, "data_%06d", block_number); 
     data = H5Dopen2(group, data_name, H5P_DEFAULT);
