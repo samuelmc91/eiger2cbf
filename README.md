@@ -176,7 +176,7 @@ Using the Windows-10 release kit
 You only should need the exe in the release downloads.  That exe is a NSIS installer 
 that will install a folder with the necessary files in a folder you select and a file named
 
-** eiger2cbf.bat **
+`eiger2cbf.bat`
 
 in C:\Windows and define an environment variable to find the folder you selected.  You 
 should not need to add anything new to your path
@@ -186,13 +186,13 @@ run it in any command window.
 
 If you just run
 
-** eiger2cbf.bat **
+`eiger2cbf.bat`
 
 you should get the help message.
 
 If you have an hdf5 master file, say, c:\myfiles\mydata_master.h5 and want
 the cbfs of frames 37 through 48, then
 
-** eiger2cbf.bat c:\myfiles\mydata_master.h5 37:48 mycbfs_ **
+`eiger2cbf.bat c:\myfiles\mydata_master.h5 37:48 mycbfs_`
 
 should give you those cbfs.
