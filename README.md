@@ -168,3 +168,31 @@ features, but requires that the WSL2 Ubuntu subsystem have been installed first,
 making installation on older Windows 10 systems problematic.  The MSYS2 version has
 more limited feature support, but allows to creation of an NSIS installer that can
 be used to install the eiger2cbf program as eiger2cbf.bat, but not of the plugins. 
+
+
+Using the Windows-10 release kit
+================================
+
+You only should need the exe in the release downloads.  That exe is a NSIS installer 
+that will install a folder with the necessary files in a folder you select and a file named
+
+** eiger2cbf.bat **
+
+in C:\Windows and define an environment variable to find the folder you selected.  You 
+should not need to add anything new to your path
+
+Since C:\Windows is in the default path for command windows (cmd), you should be able to 
+run it in any command window.
+
+If you just run
+
+** eiger2cbf.bat **
+
+you should get the help message.
+
+If you have an hdf5 master file, say, c:\myfiles\mydata_master.h5 and want
+the cbfs of frames 37 through 48, then
+
+** eiger2cbf.bat c:\myfiles\mydata_master.h5 37:48 mycbfs_ **
+
+should give you those cbfs.
