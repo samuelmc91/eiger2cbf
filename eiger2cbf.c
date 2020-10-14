@@ -207,14 +207,17 @@ int main(int argc, char **argv) {
     return 0;
   }
   
+  from = to = -1;
   retfromto = sscanf(argv[2+optcount], "%d:%d", &from, &to);
   if (retfromto == 0) {
-    fprintf(stderr, "Failed to parse output frame number(s).");
+    fprintf(stderr, "Failed to parse output frame number(s) '%s'.", argv[2+optcount]);
     return -1;\
   } else if (retfromto == 1) {
     to = from;
   }
-  if ((to != from || retfromto != -1) && argc-optcount < 4) {
+  if ((to != from || retfromto < 1 || retfromto > 2) && argc-optcount < 4) {
+    fprintf(stderr, "frames argument '%s', from: %d, to: %d\n", argv[2+optcount], from, to);
+    fprintf(stderr, "retfromto: %d, argc: %d, optcount %d\n", retfromto, argc, optcount);
     fprintf(stderr, "You cannot output multiple images into STDOUT.");
     return -1;
   }
