@@ -22,7 +22,7 @@ all:	$(EIGER2CBF_BUILD)/bin/eiger2cbf \
 	$(EIGER2CBF_BUILD)/bin/eiger2cbf_4t
 
 
-CBFLIB_URL ?=	http://github.com/yayahjb/cbflib.git
+CBFLIB_URL ?=	http://github.com/samuelmc91/cbflib.git
 $(CBFLIB_KIT):  clone_cbflib_kit
 	echo EIGER2CBF_BUILD: $(EIGER2CBF_BUILD)
 	echo CBFLIB_KIT: $(CBFLIB_KIT) 
