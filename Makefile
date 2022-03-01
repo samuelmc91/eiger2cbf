@@ -33,7 +33,8 @@ $(CBFLIB_KIT):  clone_cbflib_kit
 #	(export CBF_PREFIX=$(EIGER2CBF_BUILD);cd $(CBFLIB_KIT);make install;)
 	
 CBFLIB_KIT_INSTALL:	$(CBFLIB_KIT)
-	(export CBF_PREFIX=$(EIGER2CBF_PREFIX);cd $(CBFLIB_KIT);make install;)
+	echo CBFLIB_KIT: $(CBFLIB_KIT) 
+#	(export CBF_PREFIX=$(EIGER2CBF_PREFIX);cd $(CBFLIB_KIT);make install;)
 	
 $(EIGER2CBF_BUILD)/bin/eiger2cbf:  eiger2cbf.c lz4/lz4.c lz4/h5zlz4.c \
 	bitshuffle/bshuf_h5filter.c \
@@ -153,8 +154,7 @@ install: all $(EIGER2CBF_PREFIX)/bin $(EIGER2CBF_PREFIX)/lib \
 	$(EIGER2CBF_BUILD)/bin/eiger2params \
 	$(EIGER2CBF_BUILD)/lib/eiger2cbf.so \
 	$(EIGER2CBF_BUILD)/bin/eiger2cbf-so-worker \
-	$(EIGER2CBF_BUILD)/bin/xsplambda2cbf 
-#	$(CBFLIB_KIT) $(CBFLIB_KIT_INSTALL)
+	$(EIGER2CBF_BUILD)/bin/xsplambda2cbf $(CBFLIB_KIT) $(CBFLIB_KIT_INSTALL)
 	cp $(EIGER2CBF_BUILD)/bin/eiger2cbf $(EIGER2CBF_PREFIX)/bin/eiger2cbf
 	chmod 755 $(EIGER2CBF_PREFIX)/bin/eiger2cbf
 	cp $(EIGER2CBF_BUILD)/bin/eiger2params $(EIGER2CBF_PREFIX)/bin/eiger2params
